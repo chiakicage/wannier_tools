@@ -201,7 +201,6 @@ module sparse
    public :: arpack_sparse_coo_eigs_nonorth
 #endif
    public :: csrmv_z
-#endif
 
 contains
 

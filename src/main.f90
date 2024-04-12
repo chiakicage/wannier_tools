@@ -58,7 +58,7 @@
      call mpi_comm_size(mpi_cmw,num_cpu,ierr)
 #endif
 
-     if (cpuid==0) open(unit=stdout, file='WT.out')
+     if (cpuid==0) open(unit=stdout, file='/dev/stdout')
 
      !> if mpi initial wrong, alarm
      if (cpuid==0.and.ierr.ne.0)then

@@ -8,7 +8,7 @@ OBJ =  sparse.o wt_aux.o math_lib.o symmetry.o readHmnR.o inverse.o proteus.o \
   		 landau_level_sparse.o landau_level.o lanczos_sparse.o \
 		 berry.o wanniercenter_adaptive.o \
   		 effective_mass.o findnodes.o \
-		 sigma_OHE.o sigma.o sigma_AHC.o \
+		 sigma_OHE.o sigma.o Boltz_transport_anomalous.o\
        main.o
 CUDA_OBJ =  cuda_math.o
 
@@ -17,11 +17,11 @@ CUDA_OBJ =  cuda_math.o
 #F90  = nvfortran -Mpreprocess -DINTELMKL -pg -traceback
 F90  = nvfortran -cuda  -Mpreprocess -DCUDA -pg -traceback
 
-MKLROOT=/home/quan/intel/oneapi/mkl/2022.2.0
+# MKLROOT=/home/quan/intel/oneapi/mkl/2022.2.0
 INCLUDE = -I${MKLROOT}/include
 WFLAG = 
 OFLAG = -O3
-FFLAG = $(OFLAG) $(WFLAG)
+FFLAG = $(OFLAG) $(WFLAG) -DINTELMKL
 LFLAG = $(OFLAG)
 
 # blas and lapack libraries
@@ -32,8 +32,8 @@ LFLAG = $(OFLAG)
 		  ${ARPACK}
 
 # dynamic linking
-ARPACK=-L/home/quan/local/lib/ -larpack
-CUDA_LIB=-L/opt/nvidia/hpc_sdk/Linux_x86_64/22.5/math_libs/lib64 -lcuda -cudalib=cusparse,cublas,cusolver
+ARPACK=-L/root/wannier/arpack/lib -larpack
+CUDA_LIB=-L/opt/nvidia/hpc_sdk/Linux_x86_64/24.3/math_libs/lib64 -lcuda -cudalib=cusparse,cublas,cusolver
 LIBS = ${ARPACK} -L/${MKLROOT}/lib/intel64 -lmkl_core -lmkl_sequential -lmkl_intel_lp64 -lpthread \
 		 ${CUDA_LIB}
  

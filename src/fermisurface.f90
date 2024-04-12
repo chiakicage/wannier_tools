@@ -727,7 +727,7 @@
            write(outfileindex, '(a)')'set colorbox'
            write(outfileindex, '(a)')'set autoscale fix'
            write(outfileindex, '(a)')'set pm3d interpolate 2,2'
-           write(outfileindex, '(2a)')"splot 'bulkspintext.dat' u 4:5:(log($8+0.1)) w pm3d, \"
+           write(outfileindex, '(2a)')"splot 'bulkspintext.dat' u 4:5:(log($8+0.1)) w pm3d, \ "
            write(outfileindex, '(a)')"    'bulkspintext.dat' u 4:5:(0):($9/5.00):($10/5.00):(0)  w vec  head lw 5 lc rgb 'orange' front"
            close(outfileindex)
        
