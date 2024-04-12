@@ -335,7 +335,7 @@ subroutine LandauLevel_B_dos_Lanczos
    use sparse
    use wmpi
    use mt19937_64
-   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, &
+   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, E_arc, &
       OmegaNum, OmegaMin, OmegaMax,  Magp, stdout, Magp_min, Magp_max, &
       outfileindex, Single_KPOINT_3D_DIRECT,splen,Is_Sparse_Hr, eV2Hartree, &
       MagneticSuperProjectedArea,ijmax,NumLCZVecs, NumRandomConfs, Add_Zeeman_Field
@@ -374,8 +374,8 @@ subroutine LandauLevel_B_dos_Lanczos
    real(dp) :: continued_fraction
    logical :: term
 
-   integer :: NumberofEta
-   real(dp), allocatable :: eta_array(:)
+   integer :: NumberofEta, ie_Earc
+   real(dp), allocatable :: eta_array(:), n_Earc(:)
 
    real(dp) :: Bx_in_Tesla, By_in_Tesla, Bz_in_Tesla
    integer(8) :: iseed
@@ -383,6 +383,7 @@ subroutine LandauLevel_B_dos_Lanczos
 
    NumberofEta=9
    allocate(eta_array(NumberofEta))
+   allocate(n_Earc(NumberofEta))
    eta_array=(/0.1d0, 0.2d0, 0.4d0, 0.8d0, 1.0d0, 2d0, 4d0, 8d0, 10d0/)
    eta_array= eta_array*Eta_Arc
 
@@ -394,7 +395,7 @@ subroutine LandauLevel_B_dos_Lanczos
    if(Is_Sparse_Hr) nnzmax=splen*Nq
    if (cpuid==0) then
       write(stdout, '(a,i8)')' Magnetic supercell is Nq= ', Nq
-      write(stdout, '(a,i18)')' Matrix dimension Mdim= ', Mdim
+      write(stdout, '(a,i18)')' Hamiltonian matrix dimension Mdim= ', Mdim
       write(stdout, '(a,i18)')' nnzmax for lanczos is ', nnzmax
       write(stdout, '(a)')' Maximal integer for 32-digit is 2,147,483,647'
       write(stdout, '(a, f20.1, a)')' Memory for dos matrix is ',  &
@@ -403,6 +404,8 @@ subroutine LandauLevel_B_dos_Lanczos
          nnzmax/1024d0/1024d0*(4d0+4d0+16d0), ' MB'
       write(stdout, '(a, f20.1, a)')' Memory for Lanczos vectors is ', &
          Mdim/1024d0/1024d0*(4d0+NumRandomConfs)*16d0, ' MB'
+      write(stdout, '(a, f20.1, a)')' Memory for DOS storage is ', &
+         Nmag*OmegaNum*NumberofEta*2d0/1024d0/1024d0*8d0, ' MB'
    endif
 
    NumLczVectors = NumLCZVecs
@@ -581,22 +584,44 @@ subroutine LandauLevel_B_dos_Lanczos
 
       write(outfileindex, '("#", a, 20X, 300f16.2)')'Broadening \eta (meV): ', Eta_array(:)*1000d0/eV2Hartree
       write(outfileindex+1, '("#", a, 5X, f26.2,300f32.2)')'Broadening \eta (meV): ', Eta_array(:)*1000d0/eV2Hartree
+
+      !> find n_int at EF
+      do ie=1, omeganum
+         if (omega(ie)>E_arc) then
+            ie_Earc= ie- 1
+            exit
+         endif
+      enddo
+
       do ib=1, Nmag
          n_int=0
          do ie=1, omeganum
             write(outfileindex, '(300f16.6)')flux(ib)/2d0/pi, mag_Tesla(ib), omega(ie)/eV2Hartree, dos_B_omega_mpi(ib, ie, :)
          enddo
 
+         !> get number of electrons between the lowest energy level and E_arc
+         n_Earc= 0d0
+         do ie=1, ie_Earc
+            n_Earc(:)= n_Earc(:)+ dos_B_omega_mpi(ib, ie, :)
+         enddo
+
+         !> get number of electrons between the lowest energy level and omega(ie)
          do ie=1, omeganum
             n_int(ie, :)=n_int(ie-1, :)+ dos_B_omega_mpi(ib, ie, :)
          enddo
-         do ieta=1, NumberofEta
-            n_int(:, ieta)=n_int(:, ieta)/n_int(omeganum, ieta)
+
+         !> set n(E)= n_int- n_Earc= \int_Earc^E \rho(\epsilon)d\epsilon
+         do ie=1, omeganum
+            n_int(ie, :)= n_int(ie, :)-n_Earc(:)
          enddo
 
+        !do ieta=1, NumberofEta
+        !   n_int(:, ieta)=n_int(:, ieta)/n_int(omeganum, ieta)
+        !enddo
+
          do ie=1, omeganum
-         write(outfileindex+1,'(300f16.6)')  flux(ib)/2d0/pi, mag_Tesla(ib), &
-            (n_int(ie, ieta), dos_B_omega_mpi(ib, ie, ieta), ieta=1, NumberofEta)
+            write(outfileindex+1,'(300f16.6)')  flux(ib)/2d0/pi, mag_Tesla(ib), &
+               (n_int(ie, ieta), dos_B_omega_mpi(ib, ie, ieta), ieta=1, NumberofEta)
          enddo
 
          write(outfileindex+1, *) ' '
@@ -680,7 +705,7 @@ subroutine LandauLevel_k_dos_Lanczos
    use prec
    use sparse
    use wmpi
-   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, &
+   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, Angstrom2atomic, &
       OmegaNum, OmegaMin, OmegaMax, nk3_band, Magp, stdout, k3points, eV2Hartree, &
       outfileindex, K3len_mag,splen,Is_Sparse_Hr,ijmax,NumLCZVecs, MagneticSuperProjectedArea, &
       Nk3lines, k3line_mag_stop, k3line_name, NumRandomConfs
@@ -849,7 +874,7 @@ subroutine LandauLevel_k_dos_Lanczos
       write(outfileindex, '("#", a14, 2a15, a)')'k', 'E(eV)', 'LDOS'
       do ik=1, nk3_band
          do ie=1, omeganum
-            write(outfileindex, '(30f16.8)')K3len_mag(ik), omega(ie)/eV2Hartree, dos_k_omega_mpi(ik, ie)
+            write(outfileindex, '(30f16.8)')K3len_mag(ik)*Angstrom2atomic, omega(ie)/eV2Hartree, dos_k_omega_mpi(ik, ie)
          enddo
          write(outfileindex, *) ' '
       enddo
@@ -876,7 +901,7 @@ subroutine LandauLevel_k_dos_Lanczos
       write(outfileindex, '(a)')'#set xlabel font ",24"'
       write(outfileindex, '(a)')'set ylabel "Energy (eV)"'
       write(outfileindex, '(a, i6,a)')'set title "Landau level with Nq=', Nq, '"'
-      write(outfileindex, '(a, f18.5, a)')'set xrange [0: ', maxval(K3len_mag), ']'
+      write(outfileindex, '(a, f18.5, a)')'set xrange [0: ', maxval(K3len_mag*Angstrom2atomic), ']'
       write(outfileindex, '(a, f18.5, a, f18.5, a)')'set yrange [', OmegaMin/eV2Hartree, ':', OmegaMax/eV2Hartree, ']'
       write(outfileindex, 202, advance="no") (k3line_name(i), k3line_mag_stop(i), i=1, Nk3lines)
       write(outfileindex, 203)k3line_name(nk3lines+1), k3line_mag_stop(Nk3lines+1)
@@ -910,7 +935,7 @@ subroutine bulkbandk_dos_lanczos
    use prec
    use sparse
    use wmpi
-   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, &
+   use para, only : Magq, Num_Wann, Bx, By, zi, pi, eta_arc, Angstrom2atomic, &
       OmegaNum, OmegaMin, OmegaMax, nk3_band, Magp, stdout, k3points, &
       outfileindex, K3len,splen,Is_Sparse_Hr,ijmax,NumLCZVecs, eV2Hartree
    implicit none
@@ -1036,7 +1061,7 @@ subroutine bulkbandk_dos_lanczos
       open (unit=outfileindex, file='ekbulklcz.dat')
       do ik=1, nk3_band
          do ie=1, omeganum
-            write(outfileindex, '(30f16.8)')K3len(ik), omega(ie)/eV2Hartree, dos_k_omega_mpi(ik, ie)
+            write(outfileindex, '(30f16.8)')K3len(ik)*Angstrom2atomic, omega(ie)/eV2Hartree, dos_k_omega_mpi(ik, ie)
          enddo
          write(outfileindex, *) ' '
       enddo
@@ -1064,7 +1089,7 @@ subroutine bulkbandk_dos_lanczos
       write(outfileindex, '(a)')'set ylabel "Energy (eV)"'
       write(outfileindex, '(a, i6,a)')'set title "Hofstadter butterfly with Nq=', Nq, '" font ",40"'
       write(outfileindex,*)     'set yrange [',OmegaMin/eV2Hartree,':',OmegaMax/eV2Hartree,']'
-      write(outfileindex,*)     'set xrange [ 0.0000 :', maxval(K3len) ,']'
+      write(outfileindex,*)     'set xrange [ 0.0000 :', maxval(K3len*Angstrom2atomic) ,']'
       write(outfileindex,*)     "splot 'ekbulklcz.dat' u 1:2:(log($3)) w pm3d"
 
    endif

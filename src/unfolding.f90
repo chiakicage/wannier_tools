@@ -244,7 +244,7 @@ subroutine unfolding_kpath
       write(outfileindex, '("# ", a12, 3a16)')'k', ' E(eV)', 'A(k,E)'
       do ik=1, nk3_band
          do ie=1, omeganum_unfold
-            write(outfileindex, '(300f16.8)')k3len_unfold(ik), omega(ie)/eV2Hartree, &
+            write(outfileindex, '(300f16.8)')k3len_unfold(ik)*Angstrom2atomic, omega(ie)/eV2Hartree, &
                ((spectrum_unfold_mpi(ie, ieta, ig, ik), ieta=1, NumberofEta), ig=1, NumberofSelectedOrbitals_groups_local)
          enddo
          write(outfileindex, *) ' '
@@ -277,7 +277,7 @@ subroutine unfolding_kpath
       write(outfileindex, '(a)')'#set ylabel offset 1.5,0'
       write(outfileindex, '(a,f12.6)')'emin=', omegamin/eV2Hartree
       write(outfileindex, '(a,f12.6)')'emax=', omegamax/eV2Hartree
-      write(outfileindex, '(a, f10.5, a)')'set xrange [0: ', maxval(k3len_unfold), ']'
+      write(outfileindex, '(a, f10.5, a)')'set xrange [0: ', maxval(k3len_unfold*Angstrom2atomic), ']'
       if (index(Particle,'phonon')/=0) then
          write(outfileindex, '(a, f10.5, a)')'set yrange [0: emax ]'
          write(outfileindex, '(a)')'set ylabel "Frequency (THz)"'
@@ -285,14 +285,14 @@ subroutine unfolding_kpath
          write(outfileindex, '(a)')'set ylabel "Energy (eV)"'
          write(outfileindex, '(a)')'set yrange [ emin : emax ]'
       endif
-      write(outfileindex, 202, advance="no") (k3line_name(i), k3line_unfold_stop(i), i=1, nk3lines)
-      write(outfileindex, 203)k3line_name(nk3lines+1), k3line_unfold_stop(nk3lines+1)
+      write(outfileindex, 202, advance="no") (k3line_name(i), k3line_unfold_stop(i)*Angstrom2atomic, i=1, nk3lines)
+      write(outfileindex, 203)k3line_name(nk3lines+1), k3line_unfold_stop(nk3lines+1)*Angstrom2atomic
 
       do i=1, nk3lines-1
          if (index(Particle,'phonon')/=0) then
-            write(outfileindex, 204)k3line_unfold_stop(i+1), '0.0', k3line_unfold_stop(i+1), 'emax'
+            write(outfileindex, 204)k3line_unfold_stop(i+1)*Angstrom2atomic, '0.0', k3line_unfold_stop(i+1)*Angstrom2atomic, 'emax'
          else
-            write(outfileindex, 204)k3line_unfold_stop(i+1), 'emin', k3line_unfold_stop(i+1), 'emax'
+            write(outfileindex, 204)k3line_unfold_stop(i+1)*Angstrom2atomic, 'emin', k3line_unfold_stop(i+1)*Angstrom2atomic, 'emax'
          endif
       enddo
 
@@ -519,8 +519,7 @@ subroutine unfolding_kplane
          do ig=1, NumberofSelectedOrbitals_groups
             do ieta= 1, NumberofEta
                spectrum_unfold(ieta, ig, ik1, ik2)= spectrum_unfold(ieta, ig, ik1, ik2) + &
-                 abs(sum(psi))**2*delta(eta_array(ieta), W(n)-E_arc)
-                 !weight(ig)*delta(eta_array(ieta), W(n)-E_arc)
+                  weight(ig)*delta(eta_array(ieta), W(n)-E_arc)
             enddo ! ieta
          enddo ! ig
       enddo ! sum over n
@@ -536,15 +535,15 @@ subroutine unfolding_kplane
    outfileindex= outfileindex+ 1
    if (cpuid.eq.0)then
       open (unit=outfileindex, file='spectrum_unfold_kplane.dat')
-      write(outfileindex, "('#', a8, 5a12, 3X, '| A(k,E)', a6, 100(8X,'group ', i2))")&
+      write(outfileindex, "('#', a8, 5a16, 3X, '| A(k,E)', a6, 100(8X,'group ', i2))")&
          'kx', 'ky', 'kz', 'kp1', 'kp2', 'kp3', 'total',&
          (i, i=1, NumberofSelectedOrbitals_groups)
-      write(outfileindex, "('#column', i5, 3000i12)")(i, i=1, 7+NumberofSelectedOrbitals_groups*NumberofEta)
-      write(outfileindex, '("#", a, 6X, 300f16.2)')'Brodening \eta (meV): ', Eta_array(:)*1000d0/eV2Hartree
+      write(outfileindex, "('#column', i5, 3000i16)")(i, i=1, 6+NumberofSelectedOrbitals_groups*NumberofEta)
+      write(outfileindex, '("#", a, 70X, 300f16.2)')'Brodening \eta (meV): ', Eta_array(:)*1000d0/eV2Hartree
       do ik=1, knv3
          ik1= ik12(1, ik)
          ik2= ik12(2, ik)
-         write(outfileindex, '(3000E12.5)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
+         write(outfileindex, '(3000E16.5)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
               ((spectrum_unfold_mpi(ieta, ig, ik1, ik2), ieta=1, NumberofEta), ig=1, NumberofSelectedOrbitals_groups)
          if (mod(ik, nky)==0) write(outfileindex, *)' '
       enddo
@@ -683,8 +682,8 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
    !> PBZ : primitive cell Brillouin zone, usually, this is the Folded_cell.
    !> Implemented by QSWU 2019
    use para, only : dp, projection_weight_mode, &
-      cpuid, stdout, Nrpts, irvec, &
-      Folded_cell, pi2zi, eps3, cell_type, int_array1D, Landaulevel_unfold_line_calc
+      cpuid, stdout, Nrpts, irvec, global_shift_SC_to_PC_cart, &
+      Folded_cell, eps3, cell_type, int_array1D, Landaulevel_unfold_line_calc, twopi, zi
    implicit none
 
    integer, intent(in) :: ndim
@@ -697,6 +696,7 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
    type(cell_type) :: origincell
 
    real(dp), intent(out) :: weight(NumberofSelectedOrbitals_groups)
+   real(dp), allocatable :: weight_matix_element(:)
 
    integer, intent(in) :: NumberofSelectedOrbitals_groups
    integer, intent(in) :: NumberofSelectedOrbitals(NumberofSelectedOrbitals_groups)
@@ -709,11 +709,14 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
    real(dp) :: tau_i_tilde(3), tau_j_tilde(3), dij_tilde_cart(3), dij_tilde_direct(3)
    real(dp) :: k_cart(3), k_SBZ_direct_in_PBZ(3), k_t(3), k_t2(3), k_PBZ_direct_in_SBZ(3)
    real(dp) :: kdotr        
-   complex(dp) :: overlp
+   complex(dp) :: overlp, overlp_matrix_element
    character(10) :: atom_name_PC, atom_name_SC
 
    !> delta function
    real(dp), external :: delta, norm
+
+   allocate(weight_matix_element(NumberofSelectedOrbitals_groups))
+   weight_matix_element= 0d0
 
 
    !> k_PBZ_direct and k_SBZ_direct should be different by an reciprocal lattice vector of the Origin_cell (SBZ)
@@ -746,6 +749,7 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
 
 
    do ig=1, NumberofSelectedOrbitals_groups
+      overlp_matrix_element=0d0
       do io_PC=1, Folded_cell%NumberofSpinOrbitals
          icount = 0
          overlp=0d0
@@ -761,8 +765,8 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
             !> The atom name and the orbital should be the same between SC and PC
             if (atom_name_SC/=atom_name_PC .or. projector_SC/=projector_PC)cycle
 
-            !> the atom position in the SuperCell.
-            posi_cart=origincell%wannier_centers_cart(:, io_SC)
+            !> the atom position in the SuperCell. global_shift_SC_to_PC_cart is defined in readinput.f90
+            posi_cart=origincell%wannier_centers_cart(:, io_SC)+ global_shift_SC_to_PC_cart
             call cart_direct_real_unfold(posi_cart, posi_direct_unfold)
             
             tau_i_tilde= posi_direct_unfold- floor(posi_direct_unfold)
@@ -777,15 +781,20 @@ subroutine get_projection_weight_bulk_unfold(ndim, k_SBZ_direct, k_PBZ_direct, p
                icount=icount+ 1
             endif
 
-            !> brodening is 0.1 Angstrom
-            overlp= overlp+ delta(0.1d0, norm(dij_tilde_cart))*exp(-pi2zi*(kdotr))*psi(io_SC)/delta(0.1d0, 0d0)
+            !> brodening is 0.2 Bohr
+            overlp= overlp+ delta(0.2d0, norm(dij_tilde_cart))*(cos(twopi*kdotr)-zi*sin(twopi*kdotr))*psi(io_SC)/delta(0.2d0, 0d0)
+            overlp_matrix_element= overlp_matrix_element+ delta(0.2d0, norm(dij_tilde_cart))*(cos(twopi*kdotr)-zi*sin(twopi*kdotr))*psi(io_SC)/delta(0.2d0, 0d0)
 
          enddo ! io
-         weight(ig)= weight(ig)+ abs(overlp)**2
-        !pause
+         weight(ig)= weight(ig)+ abs(overlp)**2/NumberofSelectedOrbitals(ig)
       enddo ! io_PC
+      weight_matix_element(ig)= abs(overlp_matrix_element)**2/NumberofSelectedOrbitals(ig)
    enddo ! ig
    weight= weight/origincell%CellVolume*Folded_cell%CellVolume
+   weight_matix_element= weight_matix_element/origincell%CellVolume*Folded_cell%CellVolume
+
+   !> uncomment the next line when considering the matrix element effect in Graphene system
+   !weight = weight_matix_element
 
    return
 end subroutine get_projection_weight_bulk_unfold

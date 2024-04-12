@@ -4,7 +4,7 @@ Capabilities of WannierTools
 -  :ref:`bulkbandcalculation`
 -  :ref:`bulkfscalculation`
 -  :ref:`bulkfsplanecalculation`
--  :ref:`bulkspintexturecalculation` **New**
+-  :ref:`bulkspintexturecalculation`
 -  :ref:`doscalculation`
 -  :ref:`findnodescalculation`
 -  :ref:`energygapcalculation`
@@ -16,7 +16,7 @@ Capabilities of WannierTools
 -  :ref:`spintexturecalculation`
 -  :ref:`berryphasecalculation`
 -  :ref:`berrycurvcalculation`
--  :ref:`berrycurvcalculationslab` **New**
+-  :ref:`berrycurvcalculationslab` 
 -  :ref:`ahccalculation`
 -  :ref:`wanniercentercalculation`
 -  :ref:`z2bulkcalculation`
@@ -24,14 +24,22 @@ Capabilities of WannierTools
 -  :ref:`mirrorchernnumbercalculation` **New**
 -  :ref:`weylchiralitycalculation`
 -  :ref:`landaulevel`
+-  :ref:`magnetoresistancecalculation` **New**
 
 .. _bulkbandcalculation:
 
 Bulk band calculation (points mode, line mode and plane mode)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+With the data read from the **hr.dat** file, which could be generated with the software **Wannier90**, we actually have hopping integrals of the Hamiltonian in real 
+space in Wannier function basis. In order to convert the 
+real-space Hamiltonian back to k-space, we need to do a Fourier Transformation. 
+
+.. math:: \hat{H}(k) = \sum_R e^{ik\cdot R }\hat{H}(R)
+
+where *R* is a lattice vector. To calculate band structure, we need to diagonalize H(k)
 
 Points mode
---------------
+------------
 You can calculate the energy bands with the given k points in the KPOINTS_3D :ref:`kpoints3d` card.
 
 Input
@@ -53,14 +61,39 @@ Typical flags for this mode in the wt.in. ::
 Output
 >>>>>>
 
-The outputs for this mode is **bulkek-pointsmode.dat**
+The outputs for this mode is **bulkek-pointsmode.dat**.
+The structure for bulkek-pointsmode.dat ::
+
+ # No. of k point         1
+ #     k1        k2        k3        kx        ky        kz
+  0.000000  0.000000  0.000000  0.000000  0.000000  0.000000
+ #band index         Eigenvalue     orbital weights (0-255)
+           1       1.7456780078   45    7    7   45    7    7  135   21   21   16    1    1   16    1    1   16   20   20   16   20   20   48   61   61    5    5    5    5    5    5
+           2       1.7456797993   16   20   20   16   20   20   48   61   61    5    5    5    5    5    5   45    7    7   45    7    7  135   21   21   16    1    1   16    1    1
+
+The first line states which k point the following information belongs to. 
+The second line specifies the vectors defined in k point and correspoinding values in the atomic basis. 
+The remaining section is divided into several blocks, with each block containing the information for one band. 
+Each block includes the band index, 
+corresponding eigenvalue, and orbital weights for each projected orbital. 
+Consequently, there are 30 weights (for Bi2Se3), one for each projectors.
+
 
 Line mode
 ------------
 
-Calculate bulk energy band for a series k lines. This is the basic calculation after the
+Calculate bulk energy band for a series k lines and project the selected orbitals onto the band structures. This is the basic calculation after the
 construction of Wannier functions. You have to compare your Wannier interpolated bands 
 with the DFT bands. Those two bands should match well around the Fermi level.
+This comparison can help verify the accuracy of the Wannier functions, 
+and ensure that they provide an appropriate description of the electronic structure of the system under study.
+In order to obtain the parameter **NumOccupied**, you also need to calculate the bulk energy bands and plot it with 
+the software xmgrace.
+
+In order to get the weight onto the projections, we need to set **SELECTED_WANNIERORBITALS** card. it
+The orbital index is corresponding to the **PROJECTOS** card, nothing related to spin freedom. For example
+In Bi2Se3, there are 30 Wannier functions in the hr.dat, however, there are only 15 projectors (orbitals). 
+So indices in **SELECTED_WANNIERORBITALS** are from 1 to 15.
 
 .. _bulkekin:
 
@@ -74,6 +107,12 @@ Typical flags for bulk band calculation in the wt.in. ::
   &PARAMETERS
   Nk1 = 101   ! Number of k points for each k line
   /
+
+  ! get projected bands onto different orbitals, here we only consider orbital and omit the spin freedom
+  SELECTED_WANNIERORBITALS
+  2
+  1-6                ! Bi
+  7-15               ! Se
 
   KPATH_BULK     ! k point path
   4              ! number of k lines only for bulk band
@@ -97,7 +136,7 @@ or ::
 
  xmgrace bulkek.dat
 
-to get bandstucture plot.  
+to get a band stucture plot.  
 
 The data structure for **bulkek.dat** ::
 
@@ -113,31 +152,74 @@ The data structure for **bulkek.dat** ::
 
 The subrotine for this feature is ek_bulk.f90 .
 
+Examples
+>>>>>>>>>
+
+Two examples Bi2Se3 and Graphene were prepared:
+
+Strong topological insulator Bi2Se3  (in order to get the fat-band plot, you need to modify bulkek.gnu following the instruction inside)
+
+.. code:: console
+   
+   $ cd examples/Bi2Se3
+   $ cp wt.in-bands wt.in
+   $ ../../bin/wt.x
+   $ gnuplot bulkek.gnu
+
+2D Dirac semimetal Graphene
+
+.. code:: console
+   
+   $ cd examples/Graphene
+   $ cp wt.in-bands wt.in
+   $ ../../bin/wt.x
+   $ gnuplot bulkek.gnu
+
+The band plots of Bi2Se3 and Graphene should be like this
+
+.. image:: images/bulkbands.png
+   :scale: 30 %
+
+.. note::
+
+   In order to get the latex symbol :math:`\Gamma` in gnuplot, you need to replace **"G"** to **"{/Symbol G}"** in the bulkek.gnu like this
+
+   set xtics ("M  "    0.00000,"K  "    0.84848, **"{/Symbol G}"**    2.54543,"M  "    4.01504)
 
 Plane mode
 --------------
 
 Calculate band structure in a k slice(plane) specified by KPLANE_BULK card.
-The mode is very useful to visualize the Dirac/Weyl cone. You have to set the following tags in **wt.in** ::
+The mode is very useful to visualize the Dirac/Weyl cone. You have to set the following necessary tags in **wt.in** ::
 
+
+  !> bulk band structure calculation flag
   &CONTROL
   BulkBand_plane_calc = T
   /
-  &PARAMETERS
-  Nk1 = 51   ! Number of k points along the first vector in KPLANE_BULK
-  Nk2 = 51   ! Number of k points along the second vector in KPLANE_BULK
+  
+  &SYSTEM
+  NumOccupied = 1         ! only write out 4 bands around NumOccpuied
+  SOC = 0                 ! soc
+  E_FERMI =  -1.2533      ! e-fermi
   /
-
+  
+  &PARAMETERS
+  Nk1 = 201          ! number k points
+  Nk2 = 201          ! number k points
+  /
+  
   KPLANE_BULK   ! fractional coordinates
-   0.00  0.00  0.30   ! Middle point for a k slice(plane) in 3D BZ. Usually, the position of Dirac points.
-   0.50  0.00  0.00   ! The first vector to define k plane(slice) in 3D BZ
-   0.00  0.50  0.00   ! The second vector to define k plane(slice) in 3D BZ
-
+     0.333333  0.333333  0.000000   ! Middle point for a k slice(plane) in 3D BZ. Usually, the position of Dirac points.
+     0.100000  0.000000  0.000000   ! The first vector to define k plane(slice) in 3D BZ
+     0.000000  0.100000  0.000000   ! The second vector to define k plane(slice) in 3D BZ
 
 The output file is **bulkek_plane.dat**, **bulkek_plane-matlab.dat** and **bulkek_plane.gnu**. You can get 
-**bulkek_plane.png** with ::
+**bulkek_plane.png** with 
 
-   gnuplot bulkek_plane.gnu
+.. code:: console
+
+   $ gnuplot bulkek_plane.gnu
 
 The **bulkek_plane-matlab.dat** is in MATLAB data format. You can plot the Dirac cone with matlab.  
 
@@ -153,17 +235,53 @@ where the x and y direction are line in the k plane and the z direction is perpe
 Column 7-10th are energies at each k point. Here we only print out 4 energy bands around the fermilevel. It depends on **NumOccupied**.
 Usually, I choose column 4th and 5th as k coordinates and choose 8 and 9 as energy bands to show the Dirac cone shown below.
 
-.. image:: bulkek_plane.png
-   :scale: 15 %
 
+Example
+>>>>>>>>>>>>
 
+There is one example in the examples/Graphene
 
+.. code:: console
+
+   $ cd examples/Graphene
+   $ cp wt.in-bands-plane wt.in
+   $ ../../bin/wt.x
+   $ gnuplot bulkek_plane.gnu
+
+The output is bulkek_plane.png and should like this
+
+.. image:: images/graphene_dirac_cone.png
+   :scale: 50 %
+
+.. note:: 
+
+   Sometimes, you need to modify bulkek_plane.gnu to get correct plot. For example, in Graphene, there 
+   a only 2 bands in total. So you need to change the last two lines to 
+
+      splot 'bulkek_plane.dat' u 4:5:**7** w pm3d, 'bulkek_plane.dat' u 4:5:**8** w pm3d
 
 .. _bulkfscalculation:
 
-BulkFS calculation
-^^^^^^^^^^^^^^^^^^^^^^
-Bulk Fermi surface calculation. 
+3D Fermi surface calculation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Fermi surface calculation of the bulk system.
+
+When calculating systems with SOC=0, meaning no spin-orbit coupling, 
+WannierTools computes 12 bands from the **NumOccupied-5** to **NumOccupied+6** energy levels. 
+However, when calculating systems with SOC=1, meaning spin-orbit coupling is present, 
+WannierTools computes 16 bands from the **NumOccupied-7** to **NumOccupied+8** energy levels.
+
+.. NOTE::
+   1. In order to reduce the storage of the Fermi surface, we only write out few energy bands around NumOccupied'th bands.
+   If SOC=0, then we write out about 12 bands [Numoccupied- 5, Numoccupied+ 6]. If SOC=1, then we write out about 16 bands
+   [Numoccupied- 7, Numoccupied+ 8]. So please set **NumOccupied** to be the band index of the band crossing the Fermi level.
+   for more information about **Numoccpuied**, please refer to :ref:`systemnamelist`. If you want to write out more bands, please 
+   modify the source code at src/fermisurface.f90 around line 31-37 of subroutine fermisurface3D. And you have to 
+   recompile the code after the modification.
+
+   2. The first numerical line of KCUBE_BULK should be (0, 0, 0) in order to get right plots in xcrysden. 
+   You should not set it to other values unless you use other software to visualize the Fermi surfaces
+   or you know what you are doing.
 
 Input
 -------
@@ -181,7 +299,7 @@ in NAMELISTS PARAMETERS ::
   /
       
   KCUBE_BULK
-    0.00  0.00  0.00   ! Original point for 3D k plane 
+    0.00  0.00  0.00   ! Original point for 3D k plane, For BulkFS_calc, this should be always be 0 0 0
     1.00  0.00  0.00   ! The first vector to define 3d k space plane
     0.00  1.00  0.00   ! The second vector to define 3d k space plane
     0.00  0.00  1.00   ! The third vector to define 3d k cube
@@ -192,21 +310,51 @@ Output
 ---------
 
 The outputs for this function are **FS3D.bxsf**. 
-You can plot the FS with `xcrysden <http://www.xcrysden.org>`_  run ::
+You can plot the FS with `xcrysden <http://www.xcrysden.org>`_  run 
 
-   xcrysden --bxsf FS3D.bxsf
+.. code:: console
 
-to get the plot. 
+  $ xcrysden --bxsf FS3D.bxsf
+
+or using `FermiSurfer <https://fermisurfer.osdn.jp>`_ (version larger than 2.0.0) 
+
+.. code:: console
+
+  $ fermisurfer FS3D.bxsf 
 
 By the way, Bulk band and BulkFS calculations were already implemented in Wannier90 code.
 
 
+Example
+-----------
+
+There is one example in the examples/TiB2
+
+.. code:: console
+
+   $ cd examples/TiB2/
+   $ cp wt.in-3dfs wt.in
+   $ mpiexec -np 8 ../../bin/wt.x
+   $ xcrysden --bxsf FS3D.bxsf
+   $ fermisurfer FS3D.bxsf 
+
+
+.. image:: images/TiB2_3DFS.png
+   :scale: 25%
+
+
 .. _bulkfsplanecalculation:
 
-BulkFS plane calculation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+A cross-section of the Fermi surface
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Bulk Fermi surface in a fixed k plane specified by KPLANE_BULK 
+Bulk Fermi surface in a fixed k plane specified by **KPLANE_BULK** and at a fixed energy specified by **E_arc**.
+The Fermi surface in a k-plane is calculated by the Green's function. The spectral function can be 
+expressed by advanced Green's function.
+
+.. math:: A(k, \omega) = \frac{1}{\pi} \text{Im}\frac{1}{\omega - H(k)-i\eta} 
+
+where the fixed energy :math:`\omega` = **E_arc** and a Fermi broadening factor :math:`\eta` = **Eta_arc**
 
 Input
 --------
@@ -215,33 +363,53 @@ You should specify the number of k points for each three reciprocal vectors Nk1,
 in NAMELISTS PARAMETERS ::
 
   &CONTROL
-  BulkFS_Plane_calc = T
+  BulkFS_plane_calc     = T
+  Translate_to_WS_calc  = F   ! if True, then only write out the spectrum in the 1st BZ
   /
+  
+  &SYSTEM
+  SOC = 0             ! without
+  E_FERMI = 6.3906    ! e-fermi in the hr.dat
+  /
+  
   &PARAMETERS
-  Nk1 = 101   ! No. of slices for the 1st reciprocal vector
-  Nk2 = 101   ! No. of slices for the 2nd reciprocal vector
+  Eta_arc = 0.02      ! infinite small value, like brodening
+  E_arc = 0.0         ! energy for calculate Fermi Arc
+  Nk1 = 201           ! number k points  odd number would be better
+  Nk2 = 201           ! number k points  odd number would be better
   /
-      
-  KPLANE_BULK  ! in fractional coordinates
-    0.00  0.00  0.00   ! Original point for 3D k plane 
-    1.00  0.00  0.00   ! The first vector to define 3d k space plane
-    0.00  1.00  0.00   ! The second vector to define 3d k space plane
- 
+  
+  KPLANE_BULK         ! unit is the reciprocal lattice vectors
+   0.00  0.00  0.00   ! center point for 3D k plane
+   2.00  0.00  0.00   ! The first vector to define 3d k space plane
+   0.00  2.00  0.00   ! The second vector to define 3d k space plane
+
 See :ref:`controlnamelist`, :ref:`parametersnamelist`
 
 Output
 ---------
 
-The outputs for this function are **fs.gnu, fs.png**. 
+The outputs for this function are **fs_kplane.dat, fs_kplane.gnu**. 
 
-   gnuplot fs.gnu
+   gnuplot fs_kplane.gnu
 
 to get the plot. 
 
 
 .. image:: images/wanniertools-fermisurface.png
-   :scale: 60 %
+   :scale: 40 %
 
+Example
+-----------
+
+There is one example in the examples/TiB2
+
+.. code:: console
+
+   $ cd examples/TiB2/
+   $ cp wt.in-fs_kplane wt.in 
+   $ mpiexec -np 8 ../../bin/wt.x
+   $ gnuplot fs_kplane.gnu
 
 .. _bulkspintexturecalculation:
 
@@ -258,6 +426,59 @@ iso-energy plot of the Fermi surface (BulkFS_plane_calc =T) and get the surface 
 There is one example in the examples/Bi2Se3-6Qlayers.
 
 
+The spin texture can be obtained with 
+
+.. math:: S(k_{//},\omega) = -\frac{1}{\pi} lim_{\eta \rightarrow 0^+}[\sigma G_s(k_{//}, \omega + i\eta)]/A(k_{//,\omega})
+
+:math:`\sigma` stands for Pauli matrix.
+
+There is one example in the examples/Bi2Se3-6Qlayers.
+
+You should specify E_arc, eta_arc, Nk1, Nk2, NSLAB, E_FERMI in **wt.x** file ::
+
+   &CONTROL
+   BulkSpintexture_calc   =  T
+   /
+
+   &SYSTEM
+   NSLAB    =   1          ! for thin film system        
+   NumOccupied = 144       ! NumOccupied
+   E_FERMI  =   2.5519
+   SOC      =   1
+   /
+
+   &PARAMETERS        
+   Nk1      =   21      ! number k points  odd number would be better
+   Nk2      =   21      ! number k points  odd number would be better
+   E_arc    =   0.3     ! iso-energy
+   eta_arc  =   0.001   ! infinite small value, like broadening
+   /
+
+   SELECTED_ATOMS    ! projection only onto the selected atoms
+   2 ! number groups of selected atoms
+   6 12 18 24 30  ! top surface's atoms
+   1  7 13 19 25  ! bottom surface's atoms
+
+  
+
+The outfiles include **bulkspintext.dat** and **bulkspintext.gnu**. 
+
+The format of bulkspintext.dat ::
+
+   #          kx              ky              kz             kp1             kp2             kp3   | A(k,E) total    |group  1: A              sx              sy              sz    |group  2: A              sx              sy              sz    |group 
+   #column    1               2               3               4               5               6               7               8               9              10              11              12              13              14              15
+      0.00000000      0.17533097     -0.04387697     -0.09243483     -0.15531240      0.00000000      1.99551113      0.30759819     -0.00000000     -0.00000000      0.00000000      0.30844716     -0.00000000     -0.00000000      0.00000000
+      0.00303682      0.17357766     -0.04343820     -0.09412010     -0.15220615      0.00000000      2.01557956      0.31199054     -0.00000000     -0.00000000      0.00000000      0.31294339     -0.00000000     -0.00000000      0.00000000
+      0.00607364      0.17182435     -0.04299943     -0.09580537     -0.14909990      0.00000000      2.02732969      0.31554459     -0.00000000     -0.00000000      0.00000000      0.31659405     -0.00000000     -0.00000000      0.00000000
+      0.00911047      0.17007104     -0.04256066     -0.09749063     -0.14599365      0.00000000      2.03080158      0.31822130     -0.00000000     -0.00000000  
+
+
+plot the data with ::
+
+   gnuplot bulkspintext.gnu
+
+.. image:: images/bulkspintext.jpeg
+   :scale: 30%
 
 
 
@@ -266,12 +487,19 @@ There is one example in the examples/Bi2Se3-6Qlayers.
 Density state(DOS) calculations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+
+The formula is  ::
+
+   .. math:: DOS(\omega) = \frac{1}{N_k} \sum_k \delta(\omega-E(k))
+   .. math:: \delta(x)=   e^{-x^2/\eta/\eta/2d0}/\sqrt(2\pi)/\eta
+
 Calculation density of state for the bulk system. The typical setup in **wt.in**::
 
   &CONTROL
   DOS_calc = T
   /
   &PARAMETERS
+  Eta_Arc = 0.01    ! Fermi broadening
   OmegaNum = 601    ! number of slices of energy
   OmegaMin = -1.0   ! erergy range for DOS
   OmegaMax =  1.0
@@ -286,11 +514,32 @@ Calculation density of state for the bulk system. The typical setup in **wt.in**
     0.00  1.00  0.00   ! The second vector to define 3d k space plane
     0.00  0.00  1.00   ! The third vector to define 3d k cube
    
-  
-Outputs are **dos.dat** and **dos.gnu**. **dos.eps** will be obtained with ::
+
+Outputs are **dos.dat** and **dos.gnu**. **dos.pdf** will be obtained with ::
 
    gnuplot dos.gnu
    
+The dos.dat looks like this ::
+   
+   # Density of state of bulk system
+      # E(eV)   DOS(E) (1/eV)
+   #Broadening \eta (meV):   0.10            0.20            0.40            0.80            1.00            2.00            4.00            8.00           10.00
+       -0.600000        4.486787        4.468209        4.532150        4.465199        4.428096        4.376913        4.436603        4.552139        4.601164
+       -0.596321        4.980748        4.941778        4.783586        4.599825        4.521006        4.344811        4.404406        4.534348        4.582083
+
+.. NOTE::
+   On input, we only set one broadening parameter **Eta_arc**, however, on output, we will generate 9 DOSs with 
+   9 different broadenings.  Eta= Eta_arc* [0.1, 0.2, 0.4, 0.8, 1.0, 2, 4, 8, 10]. 
+
+   You should select the one that is smooth and has small broadening.
+
+The first column specifies the energy and the other columns list the DOS respect to different energy broadening(i.e :math:`\sigma` in Gaussian distribution)
+
+Here is one example about DOS calculation of Graphene. See examples/Graphene/wt.in-dos
+
+.. image:: images/Graphene_dos.png
+   :scale: 33 %
+
 
 .. _energygapcalculation:
 
@@ -680,6 +929,8 @@ There are a lot of outputs for QPI calculation. including
 
 .. NOTE::
 
+    This is a note
+
 .. _fermiarccalculation:
 
 Fermi arc calculation
@@ -915,7 +1166,7 @@ Use "gnuplot wcc.gnu" to get "wcc.eps" plot.
 Here is an example. 
 
 .. image:: images/WannierTools_WCC_plane.png
-   :scale: 60 %
+   :scale: 40 %
 
 
 .. _mirrorchernnumbercalculation:
@@ -1015,8 +1266,6 @@ For the 2D system, if you set the Z axis as the stack axis, please only take the
 
 Chern number for 3D bulk materials
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.. NOTE::
-
 Basically, you can calculate the Chern number for a closed manifold, for example, a 2D torus. For this purpose, I would suggest you using
  WannierCenter_calc=T in the calculation. 
 
@@ -1158,13 +1407,99 @@ The magnetic field is along the first vector specified in the SURFACE card.
 
 
 .. image:: images/WannierTools-landaulevel.png
-   :scale: 60 %
+   :scale: 40 %
 
 
+.. _magnetoresistancecalculation:
+
+Ordinary magnetoresistance calculations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+After version 2.6.0, WannierTools is able to calculate magnetoresistance
+of a non-magnetic metal or semimetal which has Fermi surfaces. The theory part was described in Phys. Rev. B 99, 035142 (2019).
+
+With control tag **Boltz_OHE_calc=T** and **Symmetry_Import_calc = T**, we can get the conductivity tensor 
+for a given magnetic direction specified by **Btheta** and **Bphi**. 
 
 
+Here we put one example of Cu. The input file wt.in is like this ::
+
+   &TB_FILE
+   Hrfile = 'wannier90_hr.dat_nsymm48'   ! Here we symmetrized the TB model
+   /
+   
+   &CONTROL
+   Boltz_OHE_calc        = T   ! calculate ordinary magnetoresistance
+   Symmetry_Import_calc  = T ! please set it to be true for magnetoresistance calculation
+   /
+   
+   &SYSTEM
+   SOC = 0                ! There is no SOC in the hr file : SOC=0; with soc : SOC=1
+   E_FERMI = 7.7083       ! e-fermi in eV
+   Btheta= 0, Bphi= 90    ! magnetic field direction, Btheta is the angle with z axial, Bphi is the angle with respect to x axial in the x-y plane
+   NumOccupied = 6        ! set it anyway even don't use it. Usually, It's the valance band maximum band index.
+   /
+   
+   &PARAMETERS
+   OmegaNum = 1        ! omega number       
+   OmegaMin =  0.0     ! energy interval
+   OmegaMax =  0.0     ! energy interval  chemical potential \mu_i=OmegaMin+ (i-1)/(OmegaNum-1)*(OmegaMax-OmegaMin)
+   Nk1 =61             ! Kmesh(1) for KCUBE_BULK
+   Nk2 =61             ! Kmesh(2) for KCUBE_BULK
+   Nk3 =61             ! Kmesh(3) for KCUBE_BULK
+   BTauNum= 100        ! Number of B*tau we calculate
+   BTauMax = 40.0      ! The maximum B*tau, starting from Btau=0.
+   Tmin = 30           ! Temperature in Kelvin
+   Tmax = 330          ! Temperature in Kelvin
+   NumT = 11           ! number temperature we calculate. T_i=Tmin+(Tmax-Tmin)/(NumT-1)*(i-1)
+   /
+   
+   LATTICE
+   Angstrom  ! Unit of length: Angstrom or Bohr
+      0.0000000   1.8075000   1.8075000
+      1.8075000   0.0000000   1.8075000
+      1.8075000   1.8075000   0.0000000
+   
+   ATOM_POSITIONS
+   1                               ! number of atoms for projectors
+   Cartisen                          ! Direct or Cartisen coordinate
+   Cu    0.000000      0.000000      0.000000     
+   
+   PROJECTORS
+   9            ! number of projectors
+   Cu s pz px py dz2 dxz dyz dx2-y2 dxy
+   
+   SELECTEDBANDS
+   1
+   6   ! the 6'th band is crossing the Fermi level.
+   
+   KCUBE_BULK   ! in unit of primitive reciprocal lattice vectors.
+    0.00  0.00  0.00   ! Original point for 3D k plane 
+    1.00  0.00  0.00   ! The first vector to define 3d k space plane
+    0.00  1.00  0.00   ! The second vector to define 3d k space plane
+    0.00  0.00  1.00   ! The third vector to define 3d k cube
+   
 
 
+The above input file indicates that 1). The magnetic field is along z direction (Btheta=0). 
+2). The chemical potential is set to Zero. by OmegaNum=1; OmegaMin=Omegamax=0.
+3). The temperature is set as an arrary from 30K to 330K with 30 as interval by Tmin=30; Tmax=330; NumT=11.
+4). The magnetic field strenth is set as B*\tau= (0, 40) with 100 points by BTauMax=40; BTauNum=100.
+5). The k-mesh is set as 61*61*61. 
+
+On output, the conductivity tensor \sigma/\tau as a function of B*Tau
+for each band n, each chemical potential mu and each temperature T are presented in file
+sigma_band_${n}_mu_${mu}eV_T_${T}K.dat
+
+If there are serveral band, you should write a script to add up all the conductivity tensor for all the bands, then 
+take an inverse of it to get the resistivity tensor. 
+
+On output, there are also resistivity tensor files for each band, each chemical potential and each temperature. 
+It's usfull to get general information for each band. 
 
 
+For more illustration of example Cu, you can visit https://www.wanniertools.org/examples/ordinary-magnetoresistance-of-cu/
 
+.. NOTE::
+   If you obtained negative magnetoresistance at large Btau, then please increase NSlice_Btau_Max such that the negative 
+   magnetoresistance vanishes. The Lorentz force will only give us positive magnetoresistance. 

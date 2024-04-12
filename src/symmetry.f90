@@ -439,6 +439,7 @@
      !>  Transfer tau: from abc basis (primitive cell)
      !>                to conventioinal cell
      !-----------------------------------------------------------------------------
+     if (cpuid.eq.0) write(stdout, '(3X, a)')'>> Here are the generators we found:'
      num_gen=0
      DO 120 nop=1,18
      IF (SUM(op_tau_mpi(nop,:)).ge.1)then
@@ -677,10 +678,10 @@
         do i=1, number_group_operators 
            write(stdout, '(5x,a, i10)')"No. operators: ", i
            write(stdout, '(5x,a, f5.1)')"Inversion:  ", spatial_inversion(i)
-           write(stdout, '(5x,a24, 10x, a24)')"Direct", "Cartesian"
-           write(stdout,'(8x,6f12.6)')pgop_direct(1, :, i), pgop_cart(1, :, i)
-           write(stdout,'(8x,6f12.6)')pgop_direct(2, :, i), pgop_cart(2, :, i)
-           write(stdout,'(8x,6f12.6)')pgop_direct(3, :, i), pgop_cart(3, :, i)
+           write(stdout, '(5x,a24, 13x, a24)')"Direct", "Cartesian"
+           write(stdout,'(8x,3f12.6, 3x,3f12.6)')pgop_direct(1, :, i), pgop_cart(1, :, i)
+           write(stdout,'(8x,3f12.6, 3x,3f12.6)')pgop_direct(2, :, i), pgop_cart(2, :, i)
+           write(stdout,'(8x,3f12.6, 3x,3f12.6)')pgop_direct(3, :, i), pgop_cart(3, :, i)
            write(stdout,'(5x, "Tau",6f12.6)')tau_direct(:, i), tau_cart(:, i)
            write(stdout,'(a)')" "
         enddo
@@ -718,9 +719,14 @@
      real(dp), allocatable :: tau_cart_left(:,:)
      real(dp), allocatable :: tau_direct_left(:,:)
      real(dp), allocatable :: spatial_inversion_left(:)
+     integer, allocatable :: imap_sym_local(:, :)
+     integer, allocatable :: imap_sym_local_left(:, :)
      allocate(pgop_cart_left(3, 3, 48), pgop_direct_left(3, 3, 48))
      allocate(tau_cart_left(3, 48), tau_direct_left(3, 48), spatial_inversion_left(48))
      allocate(Atom_magnetic_moment_field(3, Origin_cell%Num_atoms))
+     allocate(imap_sym_local(Origin_cell%Num_atoms , number_group_operators))
+     allocate(imap_sym_local_left(Origin_cell%Num_atoms, number_group_operators))
+     imap_sym_local= -1
 
      !> magnetic moment after considering the magnetic field
      do ia=1, Origin_cell%Num_atoms
@@ -766,6 +772,9 @@
               stop
            endif
 
+           !> after the symmtry operation, the iatomA is mapped to ifind
+           imap_sym_local(iatomA, iop)= ifind
+
            !> magnetic moment of atom B which is the image after the symmetry operation R to A
            MM_B= Atom_magnetic_moment_field(:, ifind)
 
@@ -778,19 +787,19 @@
            endif
 
            if (cpuid==0) then
-              write(stdout, '(a, i8)')' No. of operators: ', iop 
-              write(stdout, '(a, 3f8.4)')' Operators in fractional unit with tau = ', tau_direct(:, iop)
-              write(stdout, '(a, f5.1)')' Inversion : ', spatial_inversion(iop)
-              write(stdout, '(2a24)')'Direct', 'Cartesian'
-              do i=1, 3
-                 write(stdout, '(10f8.4)') op_rotate_direct(i, :), op_rotate_cart(i, :)
-              enddo
-              write(stdout, '(a, i5, 5X, 3f8.4)')' Applying on atom A :', iatomA, atom_position_A_direct
-              write(stdout, '(a, i5, 5X, 3f8.4)')' Getting  a  atom B :', ifind, Origin_cell%Atom_position_direct(:, ifind)
-              write(stdout, '(a, 3f8.4)')'Magnetic moment on atom A :', Atom_magnetic_moment_field(:, iatomA)
-              write(stdout, '(a, 3f8.4)')'Magnetic moment on atom B :', Atom_magnetic_moment_field(:, ifind)
-              write(stdout, '(a, 3f8.4)')'Symmetry operation on magnetic moment of atom A ', MM_OP_A
-              write(stdout, *)' '
+             !write(stdout, '(a, i8)')' No. of operators: ', iop 
+             !write(stdout, '(a, 3f8.4)')' Operators in fractional unit with tau = ', tau_direct(:, iop)
+             !write(stdout, '(a, f5.1)')' Inversion : ', spatial_inversion(iop)
+             !write(stdout, '(2a24)')'Direct', 'Cartesian'
+             !do i=1, 3
+             !   write(stdout, '(10f8.4)') op_rotate_direct(i, :), op_rotate_cart(i, :)
+             !enddo
+             !write(stdout, '(a, i5, 5X, 3f8.4)')' Applying on atom A :', iatomA, atom_position_A_direct
+             !write(stdout, '(a, i5, 5X, 3f8.4)')' Getting  a  atom B :', ifind, Origin_cell%Atom_position_direct(:, ifind)
+             !write(stdout, '(a, 3f8.4)')'Magnetic moment on atom A :', Atom_magnetic_moment_field(:, iatomA)
+             !write(stdout, '(a, 3f8.4)')'Magnetic moment on atom B :', Atom_magnetic_moment_field(:, ifind)
+             !write(stdout, '(a, 3f8.4)')'Symmetry operation on magnetic moment of atom A ', MM_OP_A
+             !write(stdout, *)' '
            endif
 
         enddo ! iatomA
@@ -806,38 +815,45 @@
            tau_direct_left(:, number_group_operators_left)= tau_direct(:, iop) 
            tau_cart_left(:, number_group_operators_left)= tau_cart(:, iop) 
            spatial_inversion_left(number_group_operators_left)= spatial_inversion(number_group_operators_left)
+           imap_sym_local_left(:, number_group_operators_left)= imap_sym_local(:, iop) 
         endif
      enddo
      number_group_operators= number_group_operators_left
+     if (allocated(imap_sym)) then
+        deallocate(imap_sym)
+        allocate(imap_sym(Origin_cell%Num_atoms, number_group_operators))
+     endif
+
+     !> only take the compatiable operators
      if (number_group_operators>0) then
         pgop_cart(:, :, 1:number_group_operators)= pgop_cart_left(:, :, 1:number_group_operators)
         pgop_direct(:, :, 1:number_group_operators)= pgop_direct_left(:, :, 1:number_group_operators)
         tau_cart(:, 1:number_group_operators)= tau_cart_left(:, 1:number_group_operators)
         tau_direct(:, 1:number_group_operators)= tau_direct_left(:, 1:number_group_operators)
         spatial_inversion(1:number_group_operators)= spatial_inversion_left(1:number_group_operators)
+        imap_sym(:, 1:number_group_operators) = imap_sym_local_left(:, 1:number_group_operators)
      endif
 
-     !> print out the left symmetry operator
-     if (number_group_operators==0) then
-        if (cpuid==0) then
-           write(stdout, '(a)', advance='no')">>> There is no symmetry operation "
-           write(stdout, *)"after consider the magnetic configuration."
-        endif
-     else
-        if (cpuid==0) then
-           write(stdout, *)">>> After considering the magnetic configuration, "
-           write(stdout, '(a,i6,a)')">>> There are only ",  &
-              number_group_operators, " symmetry operations left."
-           do iop=1, number_group_operators
-              write(stdout, *)" "
-              write(stdout, '(a, 3f8.4)')' Operators in fractional unit with tau = ', tau_direct(:, iop)
-              write(stdout, '(a, f5.1)')' Inversion : ', spatial_inversion(iop)
-              write(stdout, '(a16, 13X, a16)')'Direct', 'Cartesian'
-              do i=1, 3
-                 write(stdout, '(3f8.4, 5X, 3f8.4)') pgop_direct(i, :, iop), pgop_cart(i, :, iop)
-              enddo
+     if (cpuid.eq.0) then
+        write(stdout, '(a)')'>>> Space group operators'
+        do iop= 1, number_group_operators
+           write(stdout, '(a)')' '
+           write(stdout, '(a, i3)')' No. of operators: OP=', iop 
+           write(stdout, '(a, 3f8.4)')' Operators in fractional unit with tau = ', tau_direct(:, iop)
+           write(stdout, '(a, f5.1)')' Inversion : ', spatial_inversion(iop)
+           write(stdout, '(a)')' Rotation matrix:'
+           write(stdout, '(a16, 5x, a24)')'Direct', 'Cartesian'
+           do i=1, 3
+              write(stdout, '(3f8.4, 4X, 3f8.4)') pgop_direct(i, :, iop), pgop_cart(i, :, iop)
            enddo
-        endif
+        enddo  ! iop
+   
+        write(stdout, '(a)')'>> A map between a atom in unit cell and the atom after space group operation'
+        write(stdout, '(4x, a4, a8, 2x, 48("  OP=", i3))')' Name ', 'index ', (iop, iop=1, number_group_operators)
+        do iatomA= 1, Origin_cell%Num_atoms
+           write(stdout, '(3x, a4, 100i8)') trim(adjustl(Origin_cell%Atom_name(iatomA))), iatomA, imap_sym(iatomA, 1:number_group_operators)
+        enddo ! iatomA
+        write(stdout, '(a)')' '
      endif
 
      return
@@ -877,6 +893,8 @@
      allocate(pggen_cart(3, 3, 48), pggen_direct(3, 3, 48))
      allocate(pgop_cart(3, 3, 48), pgop_direct(3, 3, 48))
      allocate(tau_cart(3, 48), tau_direct(3, 48), spatial_inversion(48))
+     allocate(imap_sym(Origin_cell%Num_atoms, 48))
+     imap_sym= -1
      BasicOperations_space= 0d0
      BasicOperations_spin= 0d0
      BasicOperations_inversion= 0d0
@@ -995,11 +1013,11 @@
      iatom_mirror_x= 0
 
      !> symmetry operators for VASP
-     !> for VASP, the orbital order is up up  up up  dn dn dn dn 
-     if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
-        .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
+     !> we always assume the orbital order is up up up up dn dn dn dn 
+    !if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
+    !   .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
         !> inversion symmetry
-        !> s-> s; p-> -p; d-> -d
+        !> s-> s; p-> -p; d-> d; f->-f
         n= 0
         do ia=1, Origin_cell%Num_atoms
            do i=1, Origin_cell%nprojs(ia)
@@ -1032,13 +1050,35 @@
               case ('dz2', 'Dz2', 'DZ2')
                  inversion(n, n)= 1
                  inversion(n+ nwan, n+ nwan)= 1
+              case ('FZ3', 'FZ2')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FXZ2')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FYZ2')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FXYZ')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FZ(X2-Y2)', 'FZX2')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FX(X2-3Y2)', 'FX3', "FX3Y2")
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
+              case ('FY(3X2-Y2)', 'FY3X2', 'FY3')
+                 inversion(n, n)= -1
+                 inversion(n+ nwan, n+ nwan)= -1
               case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
+                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2, "
+                 write(*, *) "fz3, fxz2, fyz2, fxyz, fzx2, fx3y2, fx3 orbitals"
                  stop
               end select
            enddo ! i
         enddo ! ia
-       
+ 
         !> mirror_x symmetry
         !> s-> s; px->-px, py->py, pz->  pz
         !> dxy-> -dxy, dyz->  dyz, dxz-> -dxz, dx2-> dx2 dz2->dz2 
@@ -1078,8 +1118,31 @@
               case ('dz2', 'Dz2', 'DZ2')
                  mirror_x(n, n+ nwan)= 1d0
                  mirror_x(n+ nwan, n)= 1d0
+               case ('FZ3', 'FZ2')
+                 mirror_x(n, n+ nwan)= 1d0
+                 mirror_x(n+ nwan, n)= 1d0
+              case ('FXZ2')
+                 mirror_x(n, n+ nwan)=-1d0
+                 mirror_x(n+ nwan, n)=-1d0
+              case ('FYZ2')
+                 mirror_x(n, n+ nwan)= 1d0
+                 mirror_x(n+ nwan, n)= 1d0
+              case ('FXYZ')
+                 mirror_x(n, n+ nwan)=-1d0
+                 mirror_x(n+ nwan, n)=-1d0
+              case ('FZ(X2-Y2)', 'FZX2')
+                 mirror_x(n, n+ nwan)= 1d0
+                 mirror_x(n+ nwan, n)= 1d0
+              case ('FX(X2-3Y2)', 'FX3', "FX3Y2")
+                 mirror_x(n, n+ nwan)=-1d0
+                 mirror_x(n+ nwan, n)=-1d0
+              case ('FY(3X2-Y2)', 'FY3X2', 'FY3')
+                 mirror_x(n, n+ nwan)= 1d0
+                 mirror_x(n+ nwan, n)= 1d0
+ 
               case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
+                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2, "
+                 write(*, *) "fz3, fxz2, fyz2, fxyz, fzx2, fx3y2, fx3 orbitals"
                  stop
               end select
            enddo ! i
@@ -1124,8 +1187,31 @@
               case ('dz2', 'Dz2', 'DZ2')
                  C2yT(n, n)= 1 
                  C2yT(n+ nwan, n+ nwan)= 1 
+              case ('FZ3', 'FZ2')
+                 C2yT(n, n)=-1 
+                 C2yT(n+ nwan, n+ nwan)=-1 
+              case ('FXZ2')
+                 C2yT(n, n)=-1 
+                 C2yT(n+ nwan, n+ nwan)=-1 
+              case ('FYZ2')
+                 C2yT(n, n)= 1 
+                 C2yT(n+ nwan, n+ nwan)= 1 
+              case ('FXYZ')
+                 C2yT(n, n)= 1 
+                 C2yT(n+ nwan, n+ nwan)= 1 
+              case ('FZ(X2-Y2)', 'FZX2')
+                 C2yT(n, n)=-1 
+                 C2yT(n+ nwan, n+ nwan)=-1 
+              case ('FX(X2-3Y2)', 'FX3', "FX3Y2")
+                 C2yT(n, n)=-1 
+                 C2yT(n+ nwan, n+ nwan)=-1 
+              case ('FY(3X2-Y2)', 'FY3X2', 'FY3')
+                 C2yT(n, n)= 1 
+                 C2yT(n+ nwan, n+ nwan)= 1 
+ 
               case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
+                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2, "
+                 write(*, *) "fz3, fxz2, fyz2, fxyz, fzx2, fx3y2, fx3 orbitals"
                  stop
               end select
            enddo ! i
@@ -1172,8 +1258,31 @@
               case ('dz2', 'Dz2', 'DZ2')
                  mirror_y(n, n+ nwan)=-zi
                  mirror_y(n+ nwan, n)= zi
+              case ('FZ3', 'FZ2')
+                 mirror_y(n, n+ nwan)=-zi
+                 mirror_y(n+ nwan, n)= zi
+              case ('FXZ2')
+                 mirror_y(n, n+ nwan)=-zi
+                 mirror_y(n+ nwan, n)= zi
+              case ('FYZ2')
+                 mirror_y(n, n+ nwan)= zi
+                 mirror_y(n+ nwan, n)=-zi
+              case ('FXYZ')
+                 mirror_y(n, n+ nwan)= zi
+                 mirror_y(n+ nwan, n)=-zi
+              case ('FZ(X2-Y2)', 'FZX2')
+                 mirror_y(n, n+ nwan)=-zi
+                 mirror_y(n+ nwan, n)= zi
+              case ('FX(X2-3Y2)', 'FX3', "FX3Y2")
+                 mirror_y(n, n+ nwan)=-zi
+                 mirror_y(n+ nwan, n)= zi
+              case ('FY(3X2-Y2)', 'FY3X2', 'FY3')
+                 mirror_y(n, n+ nwan)= zi
+                 mirror_y(n+ nwan, n)=-zi
+ 
               case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
+                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2, "
+                 write(*, *) "fz3, fxz2, fyz2, fxyz, fzx2, fx3y2, fx3 orbitals"
                  stop
               end select
            enddo ! i
@@ -1184,9 +1293,10 @@
         enddo
       
       
-        !> mirror_z symmetry  i*sigma_z*R_z
+        !> mirror_z symmetry  i*sigma_z*R_z, but here, we omit the i
         !> s-> s; px->px, py->py, pz-> -pz
         !> dxy-> dxy, dyz-> -dyz, dxz-> -dxz, dx2-> dx2 dz2->dz2 
+        !> fz3-> -fz3, fxz2->  fxz2, fyz2-> fyz2, fxyz-> -fxyz, fzx2-> -fzx2, fx3y2->  fx3y2, fy3x2->  fy3x2
         !> up-> up  dn-> -dn  Drop off phase i
         n= 0
         do ia=1, Origin_cell%Num_atoms
@@ -1209,7 +1319,6 @@
                  mirror_z(n, n)= 1
                  mirror_z(n+ nwan, n+ nwan)=-1
               case ('dyz', 'Dyz', 'DYZ')
-      
                  mirror_z(n, n)=-1
                  mirror_z(n+ nwan, n+ nwan)= 1
               case ('dxz', 'Dxz', 'DXZ', 'dzx', 'Dzx', 'DZX')
@@ -1221,198 +1330,39 @@
               case ('dz2', 'Dz2', 'DZ2')
                  mirror_z(n, n)= 1
                  mirror_z(n+ nwan, n+ nwan)=-1
+              case ('FZ3', 'FZ2')
+                 mirror_z(n, n)= -1
+                 mirror_z(n+ nwan, n+ nwan)=  1
+              case ('FXZ2')
+                 mirror_z(n, n)=  1
+                 mirror_z(n+ nwan, n+ nwan)= -1
+              case ('FYZ2')
+                 mirror_z(n, n)=  1
+                 mirror_z(n+ nwan, n+ nwan)= -1
+              case ('FXYZ')
+                 mirror_z(n, n)= -1
+                 mirror_z(n+ nwan, n+ nwan)=  1
+              case ('FZ(X2-Y2)', 'FZX2')
+                 mirror_z(n, n)= -1
+                 mirror_z(n+ nwan, n+ nwan)=  1
+              case ('FX(X2-3Y2)', 'FX3', "FX3Y2")
+                 mirror_z(n, n)=  1
+                 mirror_z(n+ nwan, n+ nwan)= -1
+              case ('FY(3X2-Y2)', 'FY3X2', 'FY3')
+                 mirror_z(n, n)=  1
+                 mirror_z(n+ nwan, n+ nwan)= -1
               case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
+                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2, "
+                 write(*, *) "fz3, fxz2, fyz2, fxyz, fzx2, fx3y2, fx3 orbitals"
                  stop
               end select
            enddo ! i
         enddo ! ia
- 
-     !> for QE, the orbital order is up dn  up dn  up dn up dn 
-     elseif (index( Package, 'QE')/=0.or.index( Package, 'quantumespresso')/=0 &
-         .or.index( Package, 'quantum-espresso')/=0.or.index( Package, 'pwscf')/=0) then
-        !> inversion symmetry
-        !> s-> s; p-> -p; d-> -d
-        n= 0
-        do ia=1, Origin_cell%Num_atoms
-           do i=1, Origin_cell%nprojs(ia)
-              n= n+ 1
-              select case (Origin_cell%proj_name(i, ia))
-              case ('s', 'S')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case ('px', 'Px', 'PX')
-                 inversion(2*n-1, 2*n-1)=-1
-                 inversion(2*n, 2*n)=-1
-              case ('py', 'Py', 'PY')
-                 inversion(2*n-1, 2*n-1)=-1
-                 inversion(2*n, 2*n)=-1
-              case ('pz', 'Pz', 'PZ')
-                 inversion(2*n-1, 2*n-1)=-1
-                 inversion(2*n, 2*n)=-1
-              case ('dxy', 'Dxy', 'DXY')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case ('dyz', 'Dyz', 'DYZ')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case ('dxz', 'Dxz', 'DXZ', 'dzx', 'Dzx', 'DZX')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case ('dx2-y2', 'Dx2-y2', 'DX2-Y2', 'dx2', 'DX2')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case ('dz2', 'Dz2', 'DZ2')
-                 inversion(2*n-1, 2*n-1)= 1
-                 inversion(2*n, 2*n)= 1
-              case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
-                 stop
-              end select
-           enddo ! i
-        enddo ! ia
-       
-        !> mirror_x symmetry i*sigma_x*R_x
-        !> s-> s; px->-px, py->py, pz->  pz
-        !> dxy-> -dxy, dyz->  dyz, dxz-> -dxz, dx2-> dx2 dz2->dz2 
-        !> up-> i dn  dn-> i up
-        !> here we throw away the phase i, it is just a constant, leading M*M= -1
-      
-        n= 0
-        mirror_x= 0d0
-        do ia=1, Origin_cell%Num_atoms
-           do i=1, Origin_cell%nprojs(ia)
-              n= n+ 1
-              select case (Origin_cell%proj_name(i, ia))
-              case ('s', 'S')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case ('px', 'Px', 'PX')
-                 mirror_x(2*n-1, 2*n)=-1d0
-                 mirror_x(2*n, 2*n-1)=-1d0
-              case ('py', 'Py', 'PY')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case ('pz', 'Pz', 'PZ')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case ('dxy', 'Dxy', 'DXY')
-                 mirror_x(2*n-1, 2*n)=-1d0
-                 mirror_x(2*n, 2*n-1)=-1d0
-              case ('dyz', 'Dyz', 'DYZ')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case ('dxz', 'Dxz', 'DXZ', 'dzx', 'Dzx', 'DZX')
-                 mirror_x(2*n-1, 2*n)=-1d0
-                 mirror_x(2*n, 2*n-1)=-1d0
-              case ('dx2-', 'dx2-y2', 'Dx2-y2', 'DX2-Y2', 'dx2', 'DX2')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case ('dz2', 'Dz2', 'DZ2')
-                 mirror_x(2*n-1, 2*n)= 1d0
-                 mirror_x(2*n, 2*n-1)= 1d0
-              case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
-                 stop
-              end select
-           enddo ! i
-        enddo ! ia
-           
-        !> mirror_y symmetry = i*sigma_y*R_z
-        !> s-> s; px->px, py->-py, pz->  pz
-        !> dxy-> -dxy, dyz-> -dyz, dxz-> dxz, dx2-> dx2 dz2->dz2 
-        !> up-> -zi*dn  dn-> zi*up
-        !> Drop off phase i
-      
-        n= 0
-        mirror_y= 0d0
-        do ia=1, Origin_cell%Num_atoms
-           do i=1, Origin_cell%nprojs(ia)
-              n= n+ 1
-              select case (Origin_cell%proj_name(i, ia))
-              case ('s', 'S')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case ('px', 'Px', 'PX')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case ('py', 'Py', 'PY')
-                 mirror_y(2*n-1, 2*n)= zi
-                 mirror_y(2*n, 2*n-1)=-zi
-              case ('pz', 'Pz', 'PZ')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case ('dxy', 'Dxy', 'DXY')
-                 mirror_y(2*n-1, 2*n)= zi
-                 mirror_y(2*n, 2*n-1)=-zi
-              case ('dyz', 'Dyz', 'DYZ')
-                 mirror_y(2*n-1, 2*n)= zi
-                 mirror_y(2*n, 2*n-1)=-zi
-              case ('dxz', 'Dxz', 'DXZ', 'dzx', 'Dzx', 'DZX')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case ('dx2-', 'dx2-y2', 'Dx2-y2', 'DX2-Y2', 'dx2', 'DX2')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case ('dz2', 'Dz2', 'DZ2')
-                 mirror_y(2*n-1, 2*n)=-zi
-                 mirror_y(2*n, 2*n-1)= zi
-              case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
-                 stop
-              end select
-           enddo ! i
-        enddo ! ia
-      
         do i=1, Num_wann
-          !write(*, '(1000i2)')int(real(mirror_x(:, i)))
+          !write(*, '(1000i2)')int(real(mirror_z(:, i)))
         enddo
-      
-      
-        !> mirror_z symmetry
-        !> s-> s; px->px, py->py, pz-> -pz
-        !> dxy-> dxy, dyz-> -dyz, dxz-> -dxz, dx2-> dx2 dz2->dz2 
-        !> up-> up  dn-> -dn
-        n= 0
-        do ia=1, Origin_cell%Num_atoms
-           do i=1, Origin_cell%nprojs(ia)
-              n= n+ 1
-              select case (Origin_cell%proj_name(i, ia))
-              case ('s', 'S')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case ('px', 'Px', 'PX')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case ('py', 'Py', 'PY')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case ('pz', 'Pz', 'PZ')
-                 mirror_z(2*n-1, 2*n-1)=-1d0
-                 mirror_z(2*n, 2*n)=  1d0
-              case ('dxy', 'Dxy', 'DXY')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case ('dyz', 'Dyz', 'DYZ')
-                 mirror_z(2*n-1, 2*n-1)=-1d0
-                 mirror_z(2*n, 2*n)=  1d0
-              case ('dxz', 'Dxz', 'DXZ', 'dzx', 'Dzx', 'DZX')
-                 mirror_z(2*n-1, 2*n-1)=-1d0
-                 mirror_z(2*n, 2*n)=  1d0
-              case ('dx2-', 'dx2-y2', 'Dx2-y2', 'DX2-Y2', 'dx2', 'DX2')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case ('dz2', 'Dz2', 'DZ2')
-                 mirror_z(2*n-1, 2*n-1)= 1d0
-                 mirror_z(2*n, 2*n)= -1d0
-              case default
-                 write(*, *) "ERROR: only support s px py pz dxy dyz dxz dx2-y2 dz2 orbitals"
-                 stop
-              end select
-           enddo ! i
-        enddo ! ia
  
-     endif
+    !endif
 
 
      !> set up symmetry operators
@@ -1422,6 +1372,7 @@
 
      !> for glide symmetry, (1:3, 1:3) shows the mirror operation, (1:3, 4) 
      !> gives the shift
+     !> not finished yet
      allocate(glide_y_op(3,4))
 
      mirror_x_op= 0d0

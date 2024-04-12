@@ -17,7 +17,7 @@
       use para
       implicit none
 
-      integer :: i, ib
+      integer :: i, j, ib, ie, it, iter
 
       !> Bands crossing Fermi level
       integer :: Nband_Fermi_Level
@@ -55,7 +55,7 @@
       real(dp), allocatable :: Plasma_Frequencies(:, :)
 
       !> file name
-      character(40) :: bandname
+      character(40) :: bandname, muname
       character(40) :: sigmafilename
     
 
@@ -180,36 +180,113 @@
 
     
       if (cpuid.eq.0) then
-         write(stdout, *)' The calculation of sigma_OHE is finished. Now, we print out some results:'
-         write(stdout, *)' The plasma frequencies at the zero field case for different bands  in units of eV'
-         write(stdout, '(a6, 3a10)')' # nband', 'omega_x', 'omega_y', 'omega_z'  
+         write(stdout, '(a)')' '
+         write(stdout, '(a)')'>> The calculation of sigma_OHE is finished. Now, we print out some results:'
+         write(stdout, '(a)')'> The plasma frequencies at the zero field case for different bands  in units of eV'
+         write(stdout, '(a10 , 3a10)')' # nband', 'omega_x', 'omega_y', 'omega_z'  
          do i=1, Nband_Fermi_Level
             write(stdout, '(i6, 3E16.5)') i, Plasma_Frequencies(:, i)
          enddo
       endif
-      
+    
+      ! sigma_ohe_tensor(9, NBTau, OmegaNum, NumT, Nband_Fermi_Level)
+      if (cpuid.eq.0) then
+         ! write out conductivity tensor for each band
+         write(stdout, '(a)')' '
+         write(stdout, '(a)')'> Conductivity/tau tensor in unit of (\Omega*m*s)^-1, where tau is the relaxation time'
+         do ie=1, OmegaNum
+            write(stdout, '(a, f8.2, a)')' \sigma/tau tensor at chemical potential : ', mu_array(ie)*1000d0/eV2Hartree, ' meV'
+            do ib= 1, Nband_Fermi_Level
+               write(stdout, '(a, i6)')' Band index: ', bands_fermi_level(ib)
+               write(stdout, '(100(10X,"T=" f10.2, "K", 18X))') (KBT_array(it)/8.6173324E-5/eV2Hartree, it=1, NumT)
+               iter=0
+               do i=1, 3
+                  !> for each temperature
+                  do it= 1, NumT
+                     do j=1, 3
+                        iter= (i-1)*3+ j
+                        write(stdout, '(10E13.5)', advance='no' ) sigma_ohe_tensor(iter, 1, ie, it, ib)
+                     enddo
+                        write(stdout, '(2X)', advance='no' )
+                  enddo
+                  write(stdout, '(10E12.5)', advance='yes')
+               enddo
+            enddo
+            write(stdout, *) ' '
+         enddo
+
+         ! write out conductivity tensor assume tau_n=1ps
+         write(stdout, '(a)')' '
+         write(stdout, '(a)')'> Total conductivity tensor in unit of (\Omega*m)^-1, assuming relaxation time \tau_n for each band is 1ps'
+         do ie=1, OmegaNum
+            write(stdout, '(a, f8.2, a)')' \sigma/tau tensor at chemical potential : ', mu_array(ie)*1000d0/eV2Hartree, ' meV'
+            write(stdout, '(100(10X,"T=" f10.2, "K", 18X))') (KBT_array(it)/8.6173324E-5/eV2Hartree, it=1, NumT)
+            iter=0
+            do i=1, 3
+               !> for each temperature
+               do it= 1, NumT
+                  do j=1, 3
+                     iter= (i-1)*3+ j
+                     !> 1E-12 is 1ps
+                     write(stdout, '(10E13.5)', advance='no' ) sum(sigma_ohe_tensor(iter, 1, ie, it, :))*1E-12
+                  enddo ! j
+                     write(stdout, '(2X)', advance='no' )
+               enddo ! it
+               write(stdout, '(10E12.5)', advance='yes')
+            enddo ! i
+            write(stdout, *) ' '
+         enddo ! ie
+      endif
+       
 
     
       outfileindex= outfileindex+ 1
       !> write script for gnuplot
       if (cpuid==0) then
          open(unit=outfileindex, file='sigma.gnu')
+         write(muname, '(f12.2)')mu_array(ie)/eV2Hartree
+         write(sigmafilename, '(3a)')'sigma_total_mu_',trim(adjustl(muname)),'eV.dat'
          write(outfileindex, '(a)')"set encoding iso_8859_1"
-         write(outfileindex, '(a)')'set terminal  postscript enhanced color font ",24" '
-         write(outfileindex, '(a)')"set output 'sigma.eps'"
+         write(outfileindex, '(a)') 'set terminal pdfcairo enhanced color font ",30" size 10, 6'
+         write(outfileindex, '(a)') "set output 'sigma.pdf'"
          write(outfileindex, '(a)')'set border lw 2'
          write(outfileindex, '(a)')'set autoscale fix'
-         write(outfileindex, '(a)')'unset key'
-         write(outfileindex, '(a)')"set ylabel {/Symbol s}/{/Symbol t} (1/{/Symbol W}/m/s)"
-         write(outfileindex, '(a)')"set xlabel B{/Symbol t} (T.ps)"
-         do ib=1, Nband_Fermi_Level-1
-            write(bandname, '(i10)')bands_fermi_level(ib)
-            write(sigmafilename, '(3a)')'sigma_band_',trim(adjustl(bandname)), '.dat'
-            write(outfileindex, '(3a)')"plot '",trim(adjustl(sigmafilename)), "' u 1:3 w lp lw 3 lc rgb 'black', \ "
-         enddo
-         write(bandname, '(i10)')bands_fermi_level(Nband_Fermi_Level)
-         write(sigmafilename, '(3a)')'sigma_band_',trim(adjustl(bandname)), '.dat'
-         write(outfileindex, '(3a)')"     '",trim(adjustl(sigmafilename)), "' u 1:3 w lp lw 3 lc rgb 'black'"
+         write(outfileindex, '(a)')"set ylabel '{/Symbol s}_{xx}/{/Symbol t} (({/Symbol W}*m*s)^{-1})'"
+         write(outfileindex, '(a)')"set xlabel 'B{/Symbol t} (T.ps)'"
+         write(outfileindex, '(a)') 'set key outside'
+         write(outfileindex, '(a)') "set palette defined (0 'red', 1 'green')"
+         write(outfileindex, '(a)') 'unset colorbox'
+         write(outfileindex, '(a)') 'set ylabel offset 0.0,0'
+         write(outfileindex, '(a, f6.2)') 'Tmin = ',Tmin
+         write(outfileindex, '(a, f6.2)') 'Tmax = ',Tmax
+         write(outfileindex, '(a, I4)') 'NumT = ',NumT
+         write(outfileindex, '(a, f6.2)') 'OmegaMin = ',OmegaMin/eV2Hartree
+         write(outfileindex, '(a, f6.2)') 'OmegaMax = ',OmegaMax/eV2Hartree
+         write(outfileindex, '(a, I4)') 'OmegaNum = ',OmegaNum
+         write(outfileindex, '(a, I4)') 'lw = ', 4
+         write(outfileindex, '(a)') ''
+         write(outfileindex, '(a)') '#plot conductivity/tau'
+         write(outfileindex, '(4a)')& 
+               "plot for [i=0:NumT-1] '",trim(adjustl(sigmafilename)),"' every :::i::i+1 u 1:2 w l lw lw lt palette frac i/(NumT*1.0)", &
+               "title sprintf('T=%.0f K', Tmin + (Tmax-Tmin)/(NumT*1.0-1.0)*i)"
+         write(outfileindex, '(a)') ' '
+         write(outfileindex, '(a)')"set ylabel '{/Symbol s}_{xy}/{/Symbol t} (({/Symbol W}*m*s)^{-1})'"
+         write(outfileindex, '(4a)')& 
+               "plot for [i=0:NumT-1] '",trim(adjustl(sigmafilename)),"' every :::i::i+1 u 1:3 w l lw lw lt palette frac i/(NumT*1.0)", &
+               "title sprintf('T=%.0f K', Tmin + (Tmax-Tmin)/(NumT*1.0-1.0)*i)"
+         write(outfileindex, '(a)') ' '
+         write(outfileindex, '(a)') '#plot resistivity*tau'
+         write(outfileindex, '(a)') ' '
+         write(sigmafilename, '(3a)')'rho_total_mu_', trim(adjustl(muname)),'eV.dat'
+         write(outfileindex, '(a)')"set ylabel '{/Symbol r}_{xx}*{/Symbol t} ({/Symbol W}*m*s)'"
+         write(outfileindex, '(4a)')& 
+               "plot for [i=0:NumT-1] '",trim(adjustl(sigmafilename)),"' every :::i::i+1 u 1:2 w l lw lw lt palette frac i/(NumT*1.0)", &
+               "title sprintf('T=%.0f K', Tmin + (Tmax-Tmin)/(NumT*1.0-1.0)*i)"
+         write(outfileindex, '(a)') ' '
+         write(outfileindex, '(a)')"set ylabel '{/Symbol r}_{yx}*{/Symbol t} ({/Symbol W}*m*s)'"
+         write(outfileindex, '(4a)')& 
+               "plot for [i=0:NumT-1] '",trim(adjustl(sigmafilename)),"' every :::i::i+1 u 1:5 w l lw lw lt palette frac i/(NumT*1.0)", &
+               "title sprintf('T=%.0f K', Tmin + (Tmax-Tmin)/(NumT*1.0-1.0)*i)"
          close(outfileindex)
       endif
 

@@ -14,7 +14,7 @@
 
      character(40) :: fsfile
 
-     real(dp) :: kz, k(3)
+     real(dp) :: k(3)
      real(dp) :: time_start, time_end
      
      ! Hamiltonian of bulk system
@@ -59,7 +59,6 @@
      kymax= 1.00d0/1d0
      kzmin= 0.00d0/1d0
      kzmax= 1.00d0/1d0
-     kz= 0.0d0
      ik =0
 
      knv3= nk1*nk2*nk3
@@ -90,7 +89,8 @@
 
         ! calculation bulk hamiltonian
         Hamk_bulk= 0d0
-        call ham_bulk_atomicgauge    (k, Hamk_bulk)
+       !call ham_bulk_atomicgauge    (k, Hamk_bulk)
+        call ham_bulk_latticegauge    (k, Hamk_bulk)
         call eigensystem_c( 'N', 'U', Num_wann, Hamk_bulk, W)
         eigval_mpi(:, ik)= W(nband_min:nband_max)
         call now(time_end)
@@ -151,9 +151,9 @@
         write(outfileindex,'(i10)') nband_store
         write(outfileindex,'(3i10)') nk1, nk2, nk3
         write(outfileindex,'(a)') '0.0 0.0 0.0'
-        write(outfileindex,'(3f16.8)') (Origin_cell%Kua(i), i=1,3)
-        write(outfileindex,'(3f16.8)') (Origin_cell%Kub(i), i=1,3)
-        write(outfileindex,'(3f16.8)') (Origin_cell%Kuc(i), i=1,3)
+        write(outfileindex,'(3f16.8)') (Origin_cell%Kua(i)*Angstrom2atomic, i=1,3)
+        write(outfileindex,'(3f16.8)') (Origin_cell%Kub(i)*Angstrom2atomic, i=1,3)
+        write(outfileindex,'(3f16.8)') (Origin_cell%Kuc(i)*Angstrom2atomic, i=1,3)
         do i=1,nband_store
            write(outfileindex,'(a, i10)') 'BAND: ',i
            do ik=1, knv3
@@ -301,7 +301,7 @@
      dos_mpi= dos
 #endif
 
-     dos_total= 0d0
+     dos_total= eps9
      do ik=1, knv3
         do i=1, Num_wann
            dos_total(ik)= dos_total(ik)+ dos_mpi(ik, i)
@@ -498,8 +498,8 @@
      allocate( dos_total(knv3), dos_total_mpi(knv3))
      allocate( dos_selected    (knv3, NumberofSelectedOrbitals_groups))
      allocate( dos_selected_mpi(knv3, NumberofSelectedOrbitals_groups))
-     dos_total= 0d0; dos_total_mpi= 0d0
-     dos_selected= 0d0; dos_selected_mpi= 0d0
+     dos_total= eps12; dos_total_mpi= eps12
+     dos_selected= eps12; dos_selected_mpi= eps12
 
      if (SOC>0 .and. BulkSpintexture_calc) then
         allocate( sx_selected(knv3, NumberofSelectedOrbitals_groups))
@@ -522,8 +522,8 @@
         Nwann= Num_wann/2
         !> spin operator matrix
         !> this part is package dependent. 
-        if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
-           .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
+       !if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
+       !   .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
            do j=1, Nwann
               spin_sigma_x(j, Nwann+j)=1.0d0
               spin_sigma_x(j+Nwann, j)=1.0d0
@@ -532,21 +532,11 @@
               spin_sigma_z(j, j)= 1d0
               spin_sigma_z(j+Nwann, j+Nwann)=-1d0
            enddo
-        elseif (index( Package, 'QE')/=0.or.index( Package, 'quantumespresso')/=0 &
-           .or.index( Package, 'quantum-espresso')/=0.or.index( Package, 'pwscf')/=0) then
-           do j=1, Nwann
-              spin_sigma_x((2*j-1), 2*j)=1.0d0
-              spin_sigma_x(2*j, (2*j-1))=1.0d0
-              spin_sigma_y((2*j-1), 2*j)=-zi
-              spin_sigma_y(2*j, (2*j-1))=zi
-              spin_sigma_z((2*j-1), (2*j-1))=1.0d0
-              spin_sigma_z(2*j, 2*j)=-1.0d0
-           enddo
-        else
-           if (cpuid.eq.0) write(stdout, *)'Error: please report your software generating tight binding and wannier90.wout to me'
-           if (cpuid.eq.0) write(stdout, *)'wuquansheng@gmail.com'
-           stop 'Error: please report your software and wannier90.wout to wuquansheng@gmail.com'
-        endif
+       !else
+       !   if (cpuid.eq.0) write(stdout, *)'Error: please report your software generating tight binding and wannier90.wout to me'
+       !   if (cpuid.eq.0) write(stdout, *)'wuquansheng@gmail.com'
+       !   stop 'Error: please report your software and wannier90.wout to wuquansheng@gmail.com'
+       !endif
      endif
 
      allocate(ones(Num_wann, Num_wann), ctemp(Num_wann, Num_wann))
@@ -680,7 +670,7 @@
                  s0(3)= sz_selected_mpi(ik, ig)  /dos_selected_mpi(ik, ig)
                  call rotate_k3_to_kplane(s0, s1(:, ig))
               enddo
-              write(outfileindex, '(3000f16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
+              write(outfileindex, '(3000E16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
                  dos_total_mpi(ik), (dos_selected_mpi(ik, ig), s1(:, ig), ig=1, NumberofSelectedOrbitals_groups)
               if (mod(ik, nky)==0) write(outfileindex, *)' '
            enddo
@@ -694,7 +684,7 @@
               (i, i=1, NumberofSelectedOrbitals_groups)
            write(outfileindex, "('#column', i5, 3000i16)")(i, i=1, 7+NumberofSelectedOrbitals_groups)
            do ik=1, knv3
-              write(outfileindex, '(3000f16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
+              write(outfileindex, '(3000E16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, &
                  dos_total_mpi(ik), (dos_selected_mpi(ik, ig), ig=1, NumberofSelectedOrbitals_groups)
               if (mod(ik, nky)==0) write(outfileindex, *)' '
            enddo
@@ -737,7 +727,7 @@
            write(outfileindex, '(a)')'set colorbox'
            write(outfileindex, '(a)')'set autoscale fix'
            write(outfileindex, '(a)')'set pm3d interpolate 2,2'
-           write(outfileindex, '(2a)')"splot 'bulkspintext.dat' u 4:5:(log($8)) w pm3d, \ "
+           write(outfileindex, '(2a)')"splot 'bulkspintext.dat' u 4:5:(log($8+0.1)) w pm3d, \"
            write(outfileindex, '(a)')"    'bulkspintext.dat' u 4:5:(0):($9/5.00):($10/5.00):(0)  w vec  head lw 5 lc rgb 'orange' front"
            close(outfileindex)
        
@@ -765,7 +755,7 @@
            write(outfileindex, '(a)')'set colorbox'
            write(outfileindex, '(a)')'set autoscale fix'
            write(outfileindex, '(a)')'set pm3d interpolate 2,2'
-           write(outfileindex, '(2a)')"splot 'fs_kplane.dat' u 4:5:(log($7)) w pm3d"
+           write(outfileindex, '(2a)')"splot 'fs_kplane.dat' u 4:5:(log($7+0.1)) w pm3d"
        
            close(outfileindex)
         endif
@@ -930,7 +920,7 @@ subroutine fermisurface_stack
      dos_atom_mpi= dos_atom
 #endif
 
-     dos_total= 0d0
+     dos_total= eps9
      do ik=1, knv3
         do ig=1, NumberofSelectedOrbitals_groups
            do i=1, NumberofSelectedOrbitals(ig)
@@ -988,7 +978,7 @@ subroutine fermisurface_stack
        !write(outfileindex, '(a, f10.5, a, f10.5, a)')'set xrange [', kxmin_shape, ':', kxmax_shape, ']'
        !write(outfileindex, '(a, f10.5, a, f10.5, a)')'set yrange [', kymin_shape, ':', kymax_shape, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
-        write(outfileindex, '(2a)')"splot 'fs_stack.dat' u 4:5:(log($7)) w pm3d"
+        write(outfileindex, '(2a)')"splot 'fs_stack.dat' u 4:5:(log($7+0.1)) w pm3d"
 
         close(outfileindex)
      endif
@@ -1113,7 +1103,8 @@ subroutine fermisurface_stack
             'k1 (2pi/a)', 'k2 (2pi/b)', 'k3 (2pi/c)'
          do ik=1, knv3
             if (abs(gap_mpi(1, ik))< Gap_threshold) then
-               write(outfileindex, '(80f16.8)') kxy_shape(:, ik), (gap_mpi(:, ik)), kxy(:, ik)
+               write(outfileindex, '(80f16.8)') kxy_shape(:, ik)*Angstrom2atomic, &
+                  (gap_mpi(:, ik)/eV2Hartree), kxy(:, ik)*Angstrom2atomic
             endif
          enddo
          close(outfileindex)
@@ -1149,9 +1140,9 @@ subroutine fermisurface_stack
          write(outfileindex, '(a)')'set ytics offset -2.5,   0 , 0'
          write(outfileindex, '(a)')'set size ratio -1'
          write(outfileindex, '(a)')'set view 60, 140, 1, 1'
-         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set xrange [', kxmin_shape, ':', kxmax_shape, ']'
-         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set yrange [', kymin_shape, ':', kymax_shape, ']'
-         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set zrange [', kzmin_shape, ':', kzmax_shape, ']'
+         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set xrange [', kxmin_shape*Angstrom2atomic, ':', kxmax_shape*Angstrom2atomic, ']'
+         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set yrange [', kymin_shape*Angstrom2atomic, ':', kymax_shape*Angstrom2atomic, ']'
+         write(outfileindex, '(a, f10.5, a, f10.5, a)')'set zrange [', kzmin_shape*Angstrom2atomic, ':', kzmax_shape*Angstrom2atomic, ']'
          write(outfileindex, '(2a)')"splot 'GapCube.dat' u 1:2:3 w p pt 7 ps 2"
          close(outfileindex)
      
@@ -1285,7 +1276,8 @@ subroutine fermisurface_stack
          write(outfileindex, '(100a16)')'# kx', 'ky', 'kz', "kx'", "ky'", "kz'", 'gap', 'Ev4', 'Ev3', &
             'Ev2', 'Ev1', 'Ec1', 'Ec2', 'Ec3', 'Ec4', 'k1', 'k2', 'k3'
          do ik=1, knv3
-            write(outfileindex, '(300f16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)), kxy(:, ik)
+            write(outfileindex, '(300f16.8)')kxy_shape(:, ik)*Angstrom2atomic, &
+               kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)/eV2Hartree), kxy(:, ik)*Angstrom2atomic
             if (mod(ik, nky)==0) write(outfileindex, *)' '
          enddo
          close(outfileindex)
@@ -1299,7 +1291,8 @@ subroutine fermisurface_stack
             'Ec2', 'k1', 'k2', 'k3'
          do ik=1, knv3
             if (abs(gap_mpi(1, ik))< Gap_threshold) then
-               write(outfileindex, '(800f16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)), kxy(:, ik)
+               write(outfileindex, '(800f16.8)')kxy_shape(:, ik)*Angstrom2atomic, &
+               kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)/eV2Hartree), kxy(:, ik)*Angstrom2atomic
             endif
          enddo
          close(outfileindex)
@@ -1311,7 +1304,8 @@ subroutine fermisurface_stack
          write(outfileindex, '(100a16)')'% kx', 'ky', 'kz', 'gap', 'Ev2', 'Ev1', 'Ec1', &
             'Ec2', 'k1', 'k2', 'k3'
          do ik=1, knv3
-            write(outfileindex, '(300f16.8)')kxy_shape(:, ik)*Angstrom2atomic, kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)), kxy(:, ik)
+            write(outfileindex, '(300f16.8)')kxy_shape(:, ik)*Angstrom2atomic, &
+               kxy_plane(:, ik)*Angstrom2atomic, (gap_mpi(:, ik)/eV2Hartree), kxy(:, ik)*Angstrom2atomic
          enddo
          close(outfileindex)
       endif
@@ -1519,6 +1513,196 @@ subroutine fermisurface_stack
       return
    end subroutine get_fermilevel
 
+   subroutine get_density
+      !> Calculate fermilevel for the given hamiltonian
+      use wmpi
+      use para
+      implicit none
+
+      integer :: ikx, iky, ikz, ik, iT, ie, iwan, ierr, ieta
+
+      !> number of k points
+      integer :: knv3
+      integer :: NumberofEta
+
+      !> fermi level
+      real(dp) :: k(3)
+
+      real(dp), allocatable :: occupation_fermi(:), occupation_mu(:, :)
+      real(dp), allocatable :: occupation_fermi_mpi(:), occupation_mu_mpi(:, :)
+      real(dp), allocatable :: density(:)
+      real(dp) :: time_start, time_end
+
+      !> fermi-dirac distribution function
+      real(dp), external :: fermi
+
+      !> eigen value for each kpoint
+      real(dp), allocatable :: W(:)
+      real(dp), allocatable :: eigvals(:, :), eigvals_mpi(:, :)
+
+      !> we calculate Fermi level at different temperature
+      integer :: Beta_num
+      real(dp), allocatable :: mu_array(:), KBT_array(:), eta_array(:)
+
+      complex(dp), allocatable :: ham(:, :)
+      character(40) :: etaname
+      character(40), allocatable :: etanamelist(:)
+
+      knv3= Nk1*Nk2*Nk3
+      ! call WTGenerateLocalPartition(knv3, num_cpu, cpuid, ik_first, ik_last)
+      NumberofEta = 9 
+
+      allocate(eta_array(NumberofEta))
+      allocate(W(Num_wann))
+      ! allocate(eigvals(Num_wann, ik_first:ik_last))
+      ! allocate(eigvals_mpi(Num_wann, ik_first:ik_last))
+      allocate(ham(Num_wann, Num_wann))
+      allocate(KBT_array(NumT))
+      allocate(mu_array(OmegaNum))
+      allocate(occupation_fermi(NumberofEta))
+      allocate(occupation_fermi_mpi(NumberofEta))
+      allocate(occupation_mu(OmegaNum, NumT))
+      allocate(occupation_mu_mpi(OmegaNum, NumT))
+      allocate(density(NumberofEta))
+      allocate(etanamelist(NumberofEta))
+      occupation_fermi= 0d0
+      occupation_mu= 0d0
+      occupation_fermi_mpi= 0d0
+      occupation_mu_mpi= 0d0
+      mu_array= 0d0
+      KBT_array= 0d0
+      ! eigvals= 0d0
+      ham= 0d0
+      W = 0d0
+      density = 0d0
+      
+      eta_array=(/0.1d0, 0.2d0, 0.4d0, 0.8d0, 1.0d0, 2d0, 4d0, 8d0, 10d0/)
+      eta_array= eta_array*Eta_Arc
+
+      if (NumT>1) then
+         do iT=1, NumT
+            KBT_array(iT)= Tmin+ (iT-1.0d0)/(NumT-1.0d0)*(Tmax-Tmin)
+         enddo
+      else
+         KBT_array = Tmin
+      endif
+
+      if (cpuid.eq.0) then
+         write(stdout, *) ' '
+         write(stdout, *)' KBT array in the calculation in unit of Kelvin'
+         write(stdout, '(10f8.2)') KBT_array
+         write(stdout, *) ' '
+      endif
+   
+      !> transform from Kelvin to eV
+      !> The SI unit of temperature is the kelvin (K), but using the above relation the electron temperature is often expressed in
+      !> terms of the energy unit electronvolt (eV). Each kelvin (1 K) corresponds to 8.6173324(78)×10−5 eV; this factor is the ratio
+      !> of the Boltzmann constant to the elementary charge. After version 2.6, we 
+      !> adopt the atomic unit
+      KBT_array= KBT_array*8.6173324E-5*eV2Hartree
+
+      if (OmegaNum>1) then
+         do ie=1, OmegaNum
+            mu_array(ie)= OmegaMin+ (ie-1.0d0)/(OmegaNum-1.0d0)*(OmegaMax-OmegaMin)
+         enddo
+      else
+         mu_array = OmegaMin
+      endif
+
+      time_start= 0d0
+      time_end= 0d0
+      do ik= 1+cpuid, knv3, num_cpu
+      ! do ik= ik_first, ik_last
+         if (cpuid==0.and. mod(ik/num_cpu, 500)==0) &
+           write(stdout, '(a,I16,a,I16,a,f16.3,a)') 'occupation, ik ', ik, '/',knv3, 'time left', &
+           (knv3-ik)*(time_end- time_start)/num_cpu, ' s'
+        call now(time_start)
+        
+         ikx= (ik-1)/(nk2*nk3)+1
+         iky= ((ik-1-(ikx-1)*Nk2*Nk3)/nk3)+1
+         ikz= (ik-(iky-1)*Nk3- (ikx-1)*Nk2*Nk3)
+         k= K3D_start_cube+ K3D_vec1_cube*(ikx-1)/dble(nk1-1)  &
+          + K3D_vec2_cube*(iky-1)/dble(nk2-1)  &
+          + K3D_vec3_cube*(ikz-1)/dble(nk3-1)
+ 
+ 
+         ! calculation bulk hamiltonian
+         ham= 0d0
+        !call ham_bulk_atomicgauge    (k, ham)
+         call ham_bulk_latticegauge    (k, ham)
+         call eigensystem_c( 'N', 'U', Num_wann, ham, W)
+         ! eigvals_mpi(:, ik)= W
+
+         do iT = 1, NumT
+            do iwan = 1, Num_wann
+               do ie = 1, OmegaNum
+                  occupation_mu_mpi(ie, iT)= occupation_mu_mpi(ie, iT)+ &
+                     fermi(W(iwan)-mu_array(ie), 1/KBT_array(iT))
+               enddo
+            enddo
+         enddo
+         
+         do iwan = 1, Num_wann
+            do ieta = 1, NumberofEta
+               occupation_fermi_mpi(ieta)= occupation_fermi_mpi(ieta)+ &
+                  fermi(W(iwan), 1/eta_array(ieta))
+            enddo
+         enddo
+         call now(time_end)
+      enddo
+
+ 
+#if defined (MPI)
+   ! call mpi_allreduce(eigvals_mpi, eigvals,size(eigvals),&
+                     ! mpi_dp,mpi_sum,mpi_cmw,ierr)
+   call mpi_allreduce(occupation_fermi_mpi, occupation_fermi, &
+                     size(occupation_fermi),mpi_dp,mpi_sum,mpi_cmw,ierr)
+   call mpi_allreduce(occupation_mu_mpi, occupation_mu, &
+                     size(occupation_mu),mpi_dp,mpi_sum,mpi_cmw,ierr)
+   if (ierr>0) then
+      print *, 'Something wrong in mpi_allreduce in get_occupation', ierr
+      stop
+   endif
+#else
+   ! eigvals= eigvals_mpi 
+   occupation_fermi= occupation_fermi_mpi
+   occupation_mu = occupation_mu_mpi
+#endif
+   if (cpuid==0) then
+      write(stdout, *)'>> All processors finished their job for get_density' 
+   endif
+
+   !> calculate the occupation in the unit of cm^-3
+      occupation_fermi= occupation_fermi/knv3/Origin_cell%CellVolume/kCubeVolume &
+                        *Origin_cell%ReciprocalCellVolume/(Bohr_radius*100)**3
+      occupation_mu= occupation_mu/knv3/Origin_cell%CellVolume/kCubeVolume &
+                        *Origin_cell%ReciprocalCellVolume/(Bohr_radius*100)**3
+
+      do ieta = 1, NumberofEta
+         write(etaname,'(f12.2)') eta_array(ieta)*1000d0/eV2Hartree
+         write(etanamelist(ieta),'(3a)') 'occ@eta_',trim(adjustl(etaname)),'meV'
+      enddo
+      outfileindex = outfileindex+1
+      open(unit=outfileindex, file='density.dat', status='unknown')
+      write(outfileindex,'(a)') '# density in the unit of cm^-3 at different temperatures and chemical potentials' 
+      write(outfileindex, '(a,1000f8.3)')'# Tlist  =  ', KBT_array(:)/8.6173324E-5/eV2Hartree
+      write(outfileindex, '(a,1000f8.3)')'# mulist  =  ', mu_array(:)/eV2Hartree
+      do iT = 1, NumT
+         write(outfileindex, '(a, f9.3, a)')'# T  =  ', KBT_array(iT)/8.6173324E-5/eV2Hartree, ' K'
+         write(outfileindex, '(a9,9a20)')'# mu (eV)', etanamelist
+         do ie = 1, OmegaNum
+            density = 0d0
+            do ieta = 1, NumberofEta
+               density(ieta) = occupation_mu(ie, iT)-occupation_fermi(ieta)
+            enddo
+            write(outfileindex, '(f9.3, 9E20.6)') mu_array(ie)/eV2Hartree, density
+         enddo
+         write(outfileindex, '(a)')''
+      enddo
+
+      return
+   end subroutine get_density
+   
    function fermi(omega, Beta_fake) result(value)
       ! This function sets the Fermi-Dirac distribution
 

@@ -47,8 +47,7 @@ subroutine readinput
    Is_HrFile= .TRUE.
    Is_Sparse_Hr= .FALSE.
    Is_Sparse   = .FALSE.
-   Use_ELPA= .FALSE.
-   vef=0d0
+   Orthogonal_Basis = .TRUE.
    read(1001, TB_FILE, iostat= stat)
    if (stat/=0) then
       Hrfile='wannier90_hr.dat'
@@ -74,9 +73,9 @@ subroutine readinput
          write(stdout,'(1x, a)')"Tight-binding Hamiltonian FROM: fitting"
       end if
    end if
-   if(cpuid==0)write(stdout,'(1x, a, a25)')"Tight-binding Hamiltonian filename: ",Hrfile
+   if(cpuid==0)write(stdout,'(1x, a, a25)')"Tight-binding Hamiltonian filename : ",Hrfile
    if(cpuid==0)write(stdout,'(1x, a, a25)')"System of particle: ", Particle
-   if(cpuid==0)write(stdout,'(1x, a, a25)')"Tight-binding Hamiltonian obtained from : ",Package
+   if(cpuid==0)write(stdout,'(1x, a, a25)')"Tight-binding Hamiltonian obtained from package : ",Package
 
    if (index(Particle, 'electron')==0 .and. index(Particle, 'phonon')==0 &
       .and. index(Particle, 'photon')==0) then
@@ -143,7 +142,7 @@ subroutine readinput
    OrbitalTexture_calc   = .FALSE.
    OrbitalTexture_3D_calc  = .FALSE.
    Fit_kp_calc             = .FALSE.
-   DMFT_MAG_calc         = .FALSE.
+   DMFT_MAG_calc         = .FALSE.  ! not finished yet
    Symmetry_Import_calc  = .FALSE.
    LanczosSeqDOS_calc    = .FALSE.
    LandauLevel_kplane_calc = .FALSE.
@@ -151,7 +150,9 @@ subroutine readinput
    LandauLevel_B_dos_calc = .FALSE.
    Translate_to_WS_calc    = .FALSE.
    FermiLevel_calc    = .FALSE.
+   ANE_calc              = .FALSE.
    w3d_nested_calc =.false.
+   valley_projection_calc =.false.
    ChargeDensity_selected_bands_calc= .FALSE.
    ChargeDensity_selected_energies_calc= .FALSE.
 
@@ -206,6 +207,8 @@ subroutine readinput
       write(*, *)"LandauLevel_B_dos_calc"
       write(*, *)"Translate_to_WS_calc"
       write(*, *)"FermiLevel_calc"
+      write(*, *)"ANE_calc"
+      write(*, *)"valley_projection_calc"
       write(*, *)"ChargeDensity_selected_energies_calc"
       write(*, *)"ChargeDensity_selected_bands_calc"
       write(*, *)"The default Vaule is F"
@@ -281,9 +284,11 @@ subroutine readinput
       write(stdout, *) "LandauLevel_k_dos_calc            : ", LandauLevel_k_dos_calc
       write(stdout, *) "LandauLevel_B_dos_calc            : ", LandauLevel_B_dos_calc
       write(stdout, *) "FermiLevel_calc                   : ", FermiLevel_calc
+      write(stdout, *) "ANE_calc                      : ", ANE_calc
       write(stdout, *) "Symmetry_Import_calc              : ", Symmetry_Import_calc
       write(stdout, *) "ChargeDensity_selected_bands_calc : ", ChargeDensity_selected_bands_calc
       write(stdout, *) "ChargeDensity_selected_energies_calc : ", ChargeDensity_selected_energies_calc
+      write(stdout, *) "valley_projection_calc : "           , valley_projection_calc
    endif
 
 !===============================================================================================================!
@@ -321,6 +326,8 @@ subroutine readinput
    Electric_field_in_eVpA= 0d0
    Symmetrical_Electric_field_in_eVpA= 0d0
    Inner_symmetrical_Electric_Field= .False.
+   !> by default we don't set the center atom
+   center_atom_for_electric_field = -1
 
    !> by default, Vacuum_thickness_in_Angstrom= 20 Angstrom
    Vacuum_thickness_in_Angstrom = 20d0
@@ -345,8 +352,8 @@ subroutine readinput
    endif
 
    if (Numoccupied == 0) then
-      if (Z2_3D_calc.or.Chern_3D_calc.or.BulkFS_calc.or.BulkFS_Plane_calc &
-      .or.BulkFS_plane_stack_calc.or.BulkGap_plane_calc.or.WannierCenter_calc.or.&
+      if (Z2_3D_calc.or.Chern_3D_calc.or.BulkFS_calc &
+      .or.BulkGap_plane_calc.or.WannierCenter_calc.or.&
       BerryPhase_calc.or.BerryCurvature_EF_calc.or.BerryCurvature_calc.or.&
       BerryCurvature_plane_selectedbands_calc.or.BerryCurvature_slab_calc.or.&
       MirrorChern_calc.or.WeylChirality_calc.or.NLChirality_calc.or.&
@@ -531,6 +538,7 @@ subroutine readinput
    !> set up parameters for calculation
    E_arc = 0.0d0
    Eta_Arc= 0.001d0
+   EF_broadening= 0.05d0
    OmegaNum = 100
    OmegaNum_unfold = 0
    OmegaMin = -1d0
@@ -593,6 +601,8 @@ subroutine readinput
       write(stdout, *) ">>>calculation parameters : "
       write(stdout, '(1x, a, f16.5)')'E_arc : ', E_arc
       write(stdout, '(1x, a, f16.5)')'Eta_arc : ', Eta_arc
+      write(stdout, '(1x, a, f16.5)')'symprec : ', symprec
+      write(stdout, '(1x, a, f16.5)')'EF_broadening : ', EF_broadening
       write(stdout, '(1x, a, f16.5)')'Gap_threshold', Gap_threshold
       write(stdout, '(1x, a, f16.5)')'OmegaMin : ', OmegaMin
       write(stdout, '(1x, a, f16.5)')'OmegaMax : ', OmegaMax
@@ -925,7 +935,12 @@ subroutine readinput
          read(1001, *)char_temp, Origin_cell%proj_name(1:Origin_cell%nprojs(i), i)
          if(cpuid==0)write(stdout, '(40a8)') &
             char_temp, Origin_cell%proj_name(1:Origin_cell%nprojs(i), i)
+         !> change the projector name to upper case
+         do j=1, Origin_cell%nprojs(i)
+            Origin_cell%proj_name(j, i)= upper(Origin_cell%proj_name(j, i))
+         enddo
       enddo
+
    else
       stop "ERROR: please set projectors for Wannier functions information"
    endif
@@ -1088,6 +1103,8 @@ subroutine readinput
       endif
    endif
 
+   !> write out the origin cell
+   call writeout_poscar(Origin_cell, 'POSCAR-origin')
   
 !===============================================================================================================!
 !> LATTICE_UNFOLD card
@@ -1487,6 +1504,7 @@ subroutine readinput
       Umatrix(1, :)=(/1d0, 0d0, 0d0/)
       Umatrix(2, :)=(/0d0, 1d0, 0d0/)
       Umatrix(3, :)=(/0d0, 0d0, 1d0/)
+      MillerIndices= (/0, 0, 1/)
       if (cpuid==0) then
          write(stdout, *) "Warnning: You didn't set SURFACE card, by default, it's (001) surface."
          write(stdout, '(a, 3f12.6)')' The 1st vector on surface     :', Umatrix(1, :)
@@ -1506,6 +1524,7 @@ subroutine readinput
 
       Umatrix(3,:)=(/0.0,0.0,1.0/)
       read(1001, *, err=260, iostat=stat)Umatrix(3, :)
+
 260   continue
 
       if (cpuid==0) then
@@ -1526,9 +1545,9 @@ subroutine readinput
    !> check whether Umatrix is right
    !> the volume of the new cell should be the same as the old ones
    !> Here R1, R2, R3 are vectors defined by SURFACE CARD in original cartesian coordinates
-   R1= Umatrix(1, 1)*Origin_cell%Rua+  Umatrix(1, 2)*Origin_cell%Rub+ Umatrix(1, 3)*Origin_cell%Ruc
-   R2= Umatrix(2, 1)*Origin_cell%Rua+  Umatrix(2, 2)*Origin_cell%Rub+ Umatrix(2, 3)*Origin_cell%Ruc
-   R3= Umatrix(3, 1)*Origin_cell%Rua+  Umatrix(3, 2)*Origin_cell%Rub+ Umatrix(3, 3)*Origin_cell%Ruc
+   R1= Umatrix(1, 1)*Origin_cell%Rua+ Umatrix(1, 2)*Origin_cell%Rub+ Umatrix(1, 3)*Origin_cell%Ruc
+   R2= Umatrix(2, 1)*Origin_cell%Rua+ Umatrix(2, 2)*Origin_cell%Rub+ Umatrix(2, 3)*Origin_cell%Ruc
+   R3= Umatrix(3, 1)*Origin_cell%Rua+ Umatrix(3, 2)*Origin_cell%Rub+ Umatrix(3, 3)*Origin_cell%Ruc
 
    cell_volume2= R1(1)*(R2(2)*R3(3)- R2(3)*R3(2)) &
       +R1(2)*(R2(3)*R3(1)- R2(1)*R3(3)) &
@@ -1549,9 +1568,9 @@ subroutine readinput
    endif
    if (abs(abs(cell_volume2)-abs(Origin_cell%CellVolume))> 0.001d0) then
       call FindTheThirdLatticeVector()
-      R1= Umatrix(1, 1)*Origin_cell%Rua+ Umatrix(2, 1)*Origin_cell%Rub+ Umatrix(3, 1)*Origin_cell%Ruc
-      R2= Umatrix(1, 2)*Origin_cell%Rua+ Umatrix(2, 2)*Origin_cell%Rub+ Umatrix(3, 2)*Origin_cell%Ruc
-      R3= Umatrix(1, 3)*Origin_cell%Rua+ Umatrix(2, 3)*Origin_cell%Rub+ Umatrix(3, 3)*Origin_cell%Ruc
+      R1= Umatrix(1, 1)*Origin_cell%Rua+ Umatrix(1, 2)*Origin_cell%Rub+ Umatrix(1, 3)*Origin_cell%Ruc
+      R2= Umatrix(2, 1)*Origin_cell%Rua+ Umatrix(2, 2)*Origin_cell%Rub+ Umatrix(2, 3)*Origin_cell%Ruc
+      R3= Umatrix(3, 1)*Origin_cell%Rua+ Umatrix(3, 2)*Origin_cell%Rub+ Umatrix(3, 3)*Origin_cell%Ruc
       if (cpuid==0) then
          write(stdout, '(a)')' '
          write(stdout, '(a)')'>> New SURFACE CARD:'
@@ -3190,7 +3209,7 @@ subroutine readinput
    if (cpuid==0) write(stdout, '(a,i3,a)')'>> There are ', NumberofSelectedOrbitals_groups, ' groups of SelectedOrbitals'
    do ig=1, NumberofSelectedOrbitals_groups
       if (cpuid==0) write(stdout, *)'>> SelectedOrbitals'
-      if (cpuid==0) write(stdout, '(a, 3i10)')'>> Number of orbitals selected (including spin degenarcy)', &
+      if (cpuid==0) write(stdout, '(a, 3i10)')'>> Number of orbitals selected (exclude spin degenarcy)', &
          NumberofSelectedOrbitals(ig)
       if (cpuid==0) write(stdout, '(a)')'>> Orbitals are'
       if (cpuid==0) write(stdout, '(12i8)')Selected_WannierOrbitals(ig)%iarray(:)
@@ -3502,6 +3521,10 @@ subroutine readinput
       endif
    endif
 
+   ! build the map between supercell (Origin_cell) and primitive cell (Folded_cell)
+   if (BulkBand_unfold_line_calc.or.BulkBand_unfold_plane_calc.or.QPI_unfold_plane_calc.or.Landaulevel_unfold_line_calc)then
+      call build_map_supercell_primitivecell(Origin_cell, Folded_cell)
+   endif
 
    !> close wt.in
    close(1001)
@@ -4710,4 +4733,268 @@ subroutine get_volume(R1, R2, R3, volume)
    volume=dot_product(R0, R1)
    return
 end subroutine get_volume
+
+
+!> not finish yet
+subroutine build_map_supercell_primitivecell
+   !>  build the map between supercell (Origin_cell) and primitive cell (Folded_cell)
+   use para
+   implicit none
+
+   integer :: i, ia, ja, map_ia, Nleft
+   real(dp), external :: norm
+   real(dp) :: pos_cart_sc(3), pos_cart_pc(3), pos_direct_pc(3), pos_direct_sc(3)
+   real(dp) :: tau_i_tilde(3), tau_j_tilde(3), dij_tilde_cart(3), dij_tilde_direct(3)
+   character*40 :: atom_name_pc
+   real(dp) :: tol, shift_pos_cart(3)
+   real(dp), allocatable :: pos_cart_sc_all(:, :), pos_cart_pc_all(:, :)
+   real(dp), allocatable :: pos_direct_sc_all(:, :), pos_direct_pc_all(:, :)
+
+   allocate(pos_cart_sc_all(3, Origin_cell%Num_atoms))
+   allocate(pos_cart_pc_all(3, Folded_cell%Num_atoms))
+   allocate(pos_direct_sc_all(3, Origin_cell%Num_atoms))
+   allocate(pos_direct_pc_all(3, Folded_cell%Num_atoms))
+   pos_cart_sc_all= 0d0
+   pos_cart_pc_all= 0d0
+   pos_direct_sc_all= 0d0
+   pos_direct_pc_all= 0d0
+
+   !>> try to find the global shift between the supercell and the primitive cell (PC)
+   !> first, we need to transform all the atom's position in the supercell to fractional unit of PC
+   !> sweep atom in supercell (Origin_cell)
+   do i=1, NumberofSelectedAtoms(1)
+      ia= Selected_Atoms(1)%iarray(i)
+      pos_cart_sc= Origin_cell%Atom_position_cart(:, ia)
+      !> transform the cartesian coordinates of atom's position in supercell to 
+      !> the fractional coordinates of primitive cell 
+      call cart_direct_real_unfold(pos_cart_sc, pos_direct_pc) 
+
+      !> find the atom in primitive cell that the atom in supercell is mapped onto.
+      !> shift pos_direct_pc to the home unit cell [-0.5, 0.5)
+      call in_home_cell_regularization(pos_direct_pc)
+      pos_direct_sc_all(:, i)= pos_direct_pc
+      call direct_cart_real_unfold(pos_direct_pc, pos_cart_pc)
+      pos_cart_sc_all(:, i)= pos_cart_pc
+   enddo
+
+   !> move all atoms in the PC to the home unit cell [-0.5, 0.5)
+   do ia=1, Folded_cell%Num_atoms
+      pos_cart_pc= Folded_cell%Atom_position_cart(:, ia)
+      call cart_direct_real_unfold(pos_cart_pc, pos_direct_pc) 
+      call in_home_cell_regularization(pos_direct_pc)
+      call direct_cart_real_unfold(pos_direct_pc, pos_cart_pc)
+      pos_cart_pc_all(:, ia)= pos_cart_pc
+      pos_direct_pc_all(:, ia)= pos_direct_pc
+   enddo
+
+   tol = 0.10d0  ! tolrence is tol*(lattice constant)
+   !> remove the identity positions
+   call eliminate_duplicates_periodic_with_tol(3, NumberofSelectedAtoms(1), pos_direct_sc_all, Nleft, tol)
+
+   do ia= 1, Nleft
+      call direct_cart_real_unfold(pos_direct_sc_all(:, ia), pos_cart_sc_all(:, ia))
+   enddo
+   
+   if (Nleft.ne.Folded_cell%Num_atoms) then
+      print *,  'Error : something wrong with the settings of Foldedcell',  &
+         ' or there are some duplicated positions in ATOMIC_POSITION', &
+         ' or the Folded cell(PC) does not match with the super cell(SC)', &
+         ' or We support only one group of selected atoms', &
+         ' Nleft, Folded_cell%Num_atoms', &
+         Nleft, Folded_cell%Num_atoms
+
+      print *, 'The selected atoms position'
+      do i=1, NumberofSelectedAtoms(1)
+        !ia= Selected_Atoms(1)%iarray(i)
+         write(*, '(i7, 30f14.6)')ia, pos_cart_sc_all(:, i ), pos_direct_sc_all(:, i )
+      enddo
+      print *, 'The reduced atoms position'
+      do ia=1, Nleft
+         write(*, '(i7, 30f14.6)')ia, pos_cart_sc_all(:, ia), pos_direct_sc_all(:, ia)
+      enddo
+      print *, 'Atoms position in Folded cell'
+      do ia=1, Folded_cell%Num_atoms
+         write(*, '(i7, 30f14.6)')ia, pos_cart_pc_all(:, ia), pos_direct_pc_all(:, ia)
+      enddo
+      stop
+   endif
+ 
+   !> shift_pos_cart is a shift that match the Folded_cell and the Origin_cell
+   shift_pos_cart= -sum(pos_cart_sc_all(:, 1:Nleft), dim=2)+  &
+      sum(pos_cart_pc_all(:, 1:Nleft), dim=2)
+   shift_pos_cart= shift_pos_cart/Folded_cell%Num_atoms
+   global_shift_SC_to_PC_cart= shift_pos_cart
+
+   if (cpuid.eq.0)then
+     !write(stdout, *) 'The atoms position after shift in the home unit cell'
+     !do i=1, NumberofSelectedAtoms(1)
+     !   ia= Selected_Atoms(1)%iarray(i)
+     !   write(stdout, '(i7, 30f14.6)')ia, pos_cart_sc_all(:, ia), pos_direct_sc_all(:, ia)
+     !enddo
+     !write(stdout, *) 'The reduced atoms position'
+     !do ia=1, Nleft
+     !   write(stdout, '(i7, 30f14.6)')ia, pos_cart_sc_all(:, ia), pos_direct_sc_all(:, ia)
+     !enddo
+     !write(stdout, *) 'Atoms position in Folded cell'
+     !do ia=1, Folded_cell%Num_atoms
+     !   write(stdout, '(i7, 30f14.6)')ia, pos_cart_pc_all(:, ia), pos_direct_pc_all(:, ia)
+     !enddo
+ 
+      write(stdout, *)' '
+      write(stdout, *) '>>> Table of a map between a supercell (sc) and a primitive cell (pc)'
+      write(stdout, '(2x, a, 3f14.6 )')' A global shift between from the sc to pc is ', global_shift_SC_to_PC_cart
+      write(stdout,'(2x, a)')'------------------------------------------------------------------------------------------------------------------'
+      write(stdout, '(1x, a7, 12x, a7, 16x, a20, 25x, a20)') "idx_sc", 'idx_pc', ' atom position in sc', 'atom position in pc'
+      write(stdout,'(2x, a)')'------------------------------------------------------------------------------------------------------------------'
+   endif
+
+
+
+   !> sweep atom in supercell (Origin_cell)
+   do i=1, NumberofSelectedAtoms(1)
+      ia= Selected_Atoms(1)%iarray(i)
+
+      !> added the global shift
+      pos_cart_sc= Origin_cell%Atom_position_cart(:, ia)+shift_pos_cart
+      !> transform the cartesian coordinates of atom's position in supercell to 
+      !> the fractional coordinates of primitive cell 
+      call cart_direct_real_unfold(pos_cart_sc, pos_direct_pc) 
+
+      !> find the atom in primitive cell that the atom in supercell is mapped onto.
+      !> shift pos_direct_pc to the home unit cell [-0.5, 0.5)
+      call in_home_cell_regularization(pos_direct_pc)
+      tau_i_tilde= pos_direct_pc
+      do ja=1, Folded_cell%Num_atoms
+         tau_j_tilde= Folded_cell%Atom_position_direct(:, ja)
+         call periodic_diff(tau_j_tilde, tau_i_tilde, dij_tilde_direct)
+         call direct_cart_real_unfold(dij_tilde_direct, dij_tilde_cart)
+         if (norm(dij_tilde_cart)<0.5*Angstrom2atomic) exit
+      enddo
+      map_ia= ja
+
+      if (map_ia>Folded_cell%Num_atoms) then
+         map_ia=0
+         atom_name_pc= 'None'
+         call direct_cart_real_unfold(tau_i_tilde, pos_cart_pc)
+         if (cpuid.eq.0)then
+            write(stdout, '((i7, 2X, a5), " -->", (i7, 2X, a5) 9f14.6)')ia, Origin_cell%Atom_name(ia), map_ia, atom_name_pc, &
+            Origin_cell%Atom_position_cart(:, ia)/Angstrom2atomic
+         endif
+      else
+         atom_name_pc= Folded_cell%Atom_name(map_ia)
+         call direct_cart_real_unfold(tau_i_tilde, pos_cart_pc)
+         if (cpuid.eq.0)then
+            write(stdout, '((i7, 2X, a5), " -->", (i7, 2X, a5), 9f14.6)')ia, Origin_cell%Atom_name(ia), map_ia, atom_name_pc, &
+            Origin_cell%Atom_position_cart(:, ia)/Angstrom2atomic,  Folded_cell%Atom_position_cart(:, map_ia)/Angstrom2atomic
+         endif
+      endif
+
+   enddo
+   if (cpuid.eq.0)then
+      write(stdout, *)' '
+   endif
+
+   return
+end subroutine build_map_supercell_primitivecell
+
+subroutine eliminate_duplicates_periodic_with_tol(ndim1, ndim2, array2, Nleft, tol)
+   ! Eliminate the duplicated rows of a 2-dimensional array2
+   !> 0-1 = 0 is defined here
+   !
+   ! By QuanSheng Wu 
+   !
+   ! wuquansheng@gmail.com
+   !
+   ! Jan 2 2023 @ Beijing
+
+   use para, only : dp
+   implicit none
+   integer, intent(in) :: ndim1, ndim2
+   integer, intent(out) :: Nleft
+   real(dp), intent(in) :: tol
+   real(dp), intent(inout) :: array2(ndim1, ndim2)
+   real(dp), allocatable :: array2_left(:, :)
+
+   integer :: it, ik, ik1
+   logical :: Logical_duplicate
+   real(dp) :: diff(3)
+
+   allocate(array2_left(ndim1, ndim2))
+   array2_left=0
+   array2_left(:, 1)= array2(:, 1)
+
+   Nleft = 1
+   it= 1
+   do ik=2, ndim2
+      Logical_duplicate= .False.
+      do ik1=1, Nleft
+         call periodic_diff(array2(:, ik), array2_left(:, ik1), diff)
+         if (sum(abs(diff))<tol) then
+            Logical_duplicate= .True.
+            exit
+         endif
+      enddo
+      if (.not.Logical_duplicate)then
+         Nleft= Nleft+ 1
+         array2_left(:, Nleft)= array2(:, ik)
+      endif
+   enddo
+
+   array2(:, 1:Nleft)= array2_left(:, 1:Nleft)
+
+   deallocate(array2_left)
+
+   return
+end subroutine eliminate_duplicates_periodic_with_tol
+
+
+subroutine eliminate_duplicates_with_tol(ndim1, ndim2, array2, Nleft, tol)
+   ! Eliminate the duplicated rows of a 2-dimensional array2
+   !
+   ! By QuanSheng Wu 
+   !
+   ! wuquansheng@gmail.com
+   !
+   ! Jan 2 2023 @ Beijing
+
+   use para, only : dp
+   implicit none
+   integer, intent(in) :: ndim1, ndim2
+   integer, intent(out) :: Nleft
+   real(dp), intent(in) :: tol
+   real(dp), intent(inout) :: array2(ndim1, ndim2)
+   real(dp), allocatable :: array2_left(:, :)
+
+   integer :: it, ik, ik1
+   logical :: Logical_duplicate
+
+   allocate(array2_left(ndim1, ndim2))
+   array2_left=0
+   array2_left(:, 1)= array2(:, 1)
+
+   Nleft = 1
+   it= 1
+   do ik=2, ndim2
+      Logical_duplicate= .False.
+      do ik1=1, Nleft
+         if (sum(abs(array2(:, ik)-array2_left(:, ik1)))<tol) then
+            Logical_duplicate= .True.
+            exit
+         endif
+      enddo
+      if (.not.Logical_duplicate)then
+         Nleft= Nleft+ 1
+         array2_left(:, Nleft)= array2(:, ik)
+         print *, Nleft
+      endif
+   enddo
+
+   array2(:, 1:Nleft)= array2_left(:, 1:Nleft)
+
+   deallocate(array2_left)
+
+   return
+end subroutine eliminate_duplicates_with_tol
+
+
 

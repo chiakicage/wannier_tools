@@ -40,9 +40,9 @@
 !          If INFO = 0, the eigenvalues in ascending order.
 
      real(Dp), intent(inout) :: W(N)
-    
-     integer :: info
-     integer :: lwork
+     integer :: info, lwork, liwork, lrwork
+
+     integer, allocatable :: iwork(:)
 
      real(Dp),allocatable ::  rwork(:)
 
@@ -66,11 +66,33 @@
      work= (0d0, 0d0)
 
      info=0
+
+     !> initial eigenvalues are zero
      W=0.0d0
 
 
-     call zheev( JOBZ, UPLO, N, A, N,  &
-              W, work, lwork, rwork, info )
+     !>> use zheev
+     !> Use routine workspace query to get optimal workspace lwork
+    !lwork = -1
+    !allocate(rwork(3*N-2))
+    !call zheev( JOBZ, UPLO, N, A, N, W, dummy, lwork, rwork, info )
+
+    !lwork = max((64+1)*n, nint(real(dummy(1))))
+    !allocate( work(lwork))
+    !rwork= 0d0
+    !work= (0d0, 0d0)
+
+    !!> Solve the Hermitian eigenvalue problem
+    !call zheev( JOBZ, UPLO, N, A, N, W, work, lwork, rwork, info )
+
+     !>> use zheevd, it seems that zheevd is faster than zheev
+     liwork = 5*N + 3
+     lrwork = 2*N*N + 5*N + 1
+     lwork = N*(N+2)
+
+     allocate (work(lwork), rwork(lrwork), iwork(liwork))
+     CALL ZHEEVD( JOBZ, UPLO, N, A, N, W, WORK, LWORK, RWORK, &
+                   LRWORK, IWORK, LIWORK, INFO )
 
      if (info.ne.0) then
         write(stdout, *) 'ERROR : something wrong with zheev', info

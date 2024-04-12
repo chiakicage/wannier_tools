@@ -546,7 +546,7 @@
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(20E28.10)')k12_xyz(:, ik), real(Omega_mpi(ik))/Angstrom2atomic**2
+              write(outfileindex, '(20E28.10)')k12_xyz(:, ik)*Angstrom2atomic, real(Omega_mpi(ik))/Angstrom2atomic**2
            enddo
            write(outfileindex, *) ' '
         enddo
@@ -699,7 +699,7 @@
 
         do ik= 1, nk3_band
            k=k3points(:, ik)
-           write(outfileindex, '(20E18.8)')k3len(ik), real(Omega_mpi(:, ik))/Angstrom2atomic**2
+           write(outfileindex, '(20E18.8)')k3len(ik)*Angstrom2atomic, real(Omega_mpi(:, ik))/Angstrom2atomic**2
         enddo
 
         close(outfileindex)
@@ -718,7 +718,7 @@
         write(outfileindex, '(a)')'unset key'
         write(outfileindex, '(a)')'set pointsize 0.8'
         write(outfileindex, '(a)')'set view 0,0'
-        write(outfileindex, '(a, f10.5, a)')'set xrange [0: ', maxval(k3len), ']'
+        write(outfileindex, '(a, f10.5, a)')'set xrange [0: ', maxval(k3len)*Angstrom2atomic, ']'
         if (index(Particle,'phonon')/=0) then
            write(outfileindex, '(a, f10.5, a)')'set yrange [0:', ybound_max, ']'
            write(outfileindex, '(a)')'set ylabel "Frequency (THz)"'
@@ -726,14 +726,14 @@
            write(outfileindex, '(a)')'set ylabel "Energy (eV)"'
            write(outfileindex, '(a, f10.5, a, f10.5, a)')'set yrange [', ybound_min, ':', ybound_max, ']'
         endif
-        write(outfileindex, 202, advance="no") (k3line_name(i), k3line_stop(i), i=1, nk3lines)
-        write(outfileindex, 203)k3line_name(nk3lines+1), k3line_stop(nk3lines+1)
+        write(outfileindex, 202, advance="no") (k3line_name(i), k3line_stop(i)*Angstrom2atomic, i=1, nk3lines)
+        write(outfileindex, 203)k3line_name(nk3lines+1), k3line_stop(nk3lines+1)*Angstrom2atomic
   
         do i=1, nk3lines-1
            if (index(Particle,'phonon')/=0) then
-              write(outfileindex, 204)k3line_stop(i+1), 0.0, k3line_stop(i+1), ybound_max
+              write(outfileindex, 204)k3line_stop(i+1)*Angstrom2atomic, 0.0, k3line_stop(i+1)*Angstrom2atomic, ybound_max
            else
-              write(outfileindex, 204)k3line_stop(i+1), ybound_min, k3line_stop(i+1), ybound_max
+              write(outfileindex, 204)k3line_stop(i+1)*Angstrom2atomic, ybound_min, k3line_stop(i+1)*Angstrom2atomic, ybound_max
            endif
         enddo
         write(outfileindex, '(a)')"plot 'Berrycurvature_line.dat' \ "  
@@ -1052,7 +1052,7 @@
     
      integer :: ik, i, j, m, n, ierr, nkmesh2
 
-     real(dp) :: k(3), o1(3), vmin, vmax
+     real(dp) :: k(3), o1(3), vmin, vmax, kxy_plane(3)
 
      !> k points slice
      real(dp), allocatable :: kslice(:, :), kslice_xyz(:, :)
@@ -1176,17 +1176,19 @@
            "values at NumOccupied'th band", &
            ' Sum below Fermi level','values at Fermi level'
         write(outfileindex, '(a10,2000a12)')'# kx (1/A)', 'ky (1/A)', 'kz (1/A)', &
+                                            "kx' (1/A)", "ky' (1/A)", "kz' (1/A)", &
             'Omega_x', 'Omega_y', 'Omega_z', &
             'Omega_x', 'Omega_y', 'Omega_z', &
             'Omega_x', 'Omega_y', 'Omega_z', &
             'Omega_x', 'Omega_y', 'Omega_z'
-        write(outfileindex, '("#col ", i5, 200i12)')(i, i=1,15)
+        write(outfileindex, '("#col ", i5, 200i12)')(i, i=1,18)
 
         ik= 0
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik), &
+              call rotate_k3_to_kplane(kslice_xyz(:, ik), kxy_plane)
+              write(outfileindex, '(6f12.6,2000E12.4)')kslice_xyz(:, ik)*Angstrom2atomic, kxy_plane*Angstrom2atomic, &
                  Omega_allk_Occ_mpi(1, :, ik)/Angstrom2atomic**2, &
                  Omega_allk_Occ_mpi(2, :, ik)/Angstrom2atomic**2, &
                  Omega_allk_EF_mpi(1, :, ik)/Angstrom2atomic**2, &
@@ -1214,6 +1216,7 @@
            "values at NumOccupied'th band", &
            ' Sum below Fermi level','values at Fermi level'
         write(outfileindex, '(a10,2000a12)')'# kx (1/A)', 'ky (1/A)', 'kz (1/A)', &
+                                            "kx' (1/A)", "ky' (1/A)", "kz' (1/A)", &
               'm_x', 'm_y', 'm_z', 'm_x', 'm_y', 'm_z', &
               'm_x', 'm_y', 'm_z', 'm_x', 'm_y', 'm_z'
 
@@ -1221,7 +1224,7 @@
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik), &
+              write(outfileindex, '(6f12.6,2000E12.4)')kslice_xyz(:, ik)*Angstrom2atomic, kxy_plane*Angstrom2atomic, &
                  m_OrbMag_allk_Occ_mpi(1, :, ik),  m_OrbMag_allk_Occ_mpi(2, :, ik), &
                  m_OrbMag_allk_EF_mpi(1, :, ik), m_OrbMag_allk_EF_mpi(2, :, ik)
            enddo
@@ -1271,14 +1274,14 @@
         write(outfileindex, '(a)')"set ytics 0.5 nomirror scale 0.5"
         write(outfileindex, '(a)')"set pm3d interpolate 2,2"
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_x ({\305}^2)'"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:4 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:7 w pm3d"
         write(outfileindex, '(a)')"unset ylabel"
         write(outfileindex, '(a)')"unset ytics"
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_y ({\305}^2)'"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:5 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:8 w pm3d"
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_z ({\305}^2)'"
         write(outfileindex, '(a)')"set colorbox"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:6 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:9 w pm3d"
 
         write(outfileindex, '(a)')"unset multiplot"
         write(outfileindex, '(a)')"unset label 1"
@@ -1292,14 +1295,14 @@
         open(unit=outfileindex, file='Berrycurvature.gnu')
         write(outfileindex, '(a, E10.3, a, E10.3, a)')"set cbrange [ ", vmin, ':', vmax, " ] "
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_x ({\305}^2)'"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:10 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:10 w pm3d"
         write(outfileindex, '(a)')"unset ylabel"
         write(outfileindex, '(a)')"unset ytics"
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_y ({\305}^2)'"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:11 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:11 w pm3d"
         write(outfileindex, '(a)')"set title 'Berry Curvature {/Symbol W}_z ({\305}^2)'"
         write(outfileindex, '(a)')"set colorbox"
-        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 1:2:12 w pm3d"
+        write(outfileindex, '(a)')"splot 'Berrycurvature.dat' u 4:5:12 w pm3d"
 
 
         close(outfileindex)
@@ -1341,14 +1344,14 @@
         write(outfileindex, '(a)')"set ytics 0.5 nomirror scale 0.5"
         write(outfileindex, '(a)')"set pm3d interpolate 2,2"
         write(outfileindex, '(a)')"set title 'Orbital magnetization m_x ({/Symbol m}_B)'"
-        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 1:2:4 w pm3d"
+        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 4:5:7 w pm3d"
         write(outfileindex, '(a)')"unset ylabel"
         write(outfileindex, '(a)')"unset ytics"
         write(outfileindex, '(a)')"set title 'Orbital magnetization m_y ({/Symbol m}_B)'"
-        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 1:2:5 w pm3d"
+        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 4:5:8 w pm3d"
         write(outfileindex, '(a)')"set title 'Orbital magnetization m_{z} ({/Symbol m}_B)'"
         write(outfileindex, '(a)')"set colorbox"
-        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 1:2:6 w pm3d"
+        write(outfileindex, '(a)')"splot 'Orbitalmagnetization.dat' u 4:5:9 w pm3d"
         close(outfileindex)
      endif
 
@@ -1368,7 +1371,7 @@
               ik= ik+ 1
               o1= Omega_allk_Occ_mpi(1, :, ik)
               if (norm(o1)>eps4) o1= o1/norm(o1)
-              write(outfileindex, '(20f12.6)')kslice_xyz(:, ik), o1
+              write(outfileindex, '(20f12.6)')kslice_xyz(:, ik)*Angstrom2atomic, o1
            enddo
            write(outfileindex, *) ' '
         enddo
@@ -1398,7 +1401,7 @@
         write(outfileindex, '(a)')"set ytics 0.5 nomirror scale 0.5"
         write(outfileindex, '(a)')"set pm3d interpolate 2,2"
         write(outfileindex, '(a)')"set title '({/Symbol W}_x, {/Symbol W}_y)'"
-        write(outfileindex, '(a)')"plot 'Berrycurvature-normalized.dat' u 1:2:($4/10):($5/10) w vec"
+        write(outfileindex, '(a)')"plot 'Berrycurvature-normalized.dat' u 4:5:($7/10):($8/10) w vec"
         close(outfileindex)
      endif
 
@@ -1627,7 +1630,7 @@
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik), &
+              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik)*Angstrom2atomic, &
                  (Omega_allk_mpi(Selected_band_index(n), :, ik)/Angstrom2atomic**2, &
                  m_OrbMag_allk_mpi(Selected_band_index(n), :, ik), n=1, NumberofSelectedBands)   
            enddo
@@ -1840,7 +1843,7 @@
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik), &
+              write(outfileindex, '(3f12.6,2000E12.4)')kslice_xyz(:, ik)*Angstrom2atomic, &
                  (Omega_allk_mpi(Selected_band_index(n), :, ik)/Angstrom2atomic**2, &
                  m_OrbMag_allk_mpi(Selected_band_index(n), :, ik), n=1, NumberofSelectedBands)   
            enddo
@@ -2023,7 +2026,7 @@
         do i= 1, nk1
            do j= 1, nk2
               ik= ik+ 1
-              write(outfileindex, '(20E28.10)')kslice_xyz(:, ik), &
+              write(outfileindex, '(20E28.10)')kslice_xyz(:, ik)*Angstrom2atomic, &
                  real(Omega_mpi(:, ik))/Angstrom2atomic**2
            enddo
            write(outfileindex, *) ' '
@@ -2047,7 +2050,7 @@
               ik= ik+ 1
               o1= real(Omega_mpi(:,ik))
               if (norm(o1)>eps9) o1= o1/norm(o1)
-              write(outfileindex, '(20f28.10)')kslice_xyz(:, ik), o1
+              write(outfileindex, '(20f28.10)')kslice_xyz(:, ik)*Angstrom2atomic, o1
            enddo
            write(outfileindex, *) ' '
         enddo

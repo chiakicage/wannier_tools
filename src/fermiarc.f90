@@ -29,7 +29,7 @@
 
      ! kpoint loop index
      integer :: ikp, ik1, ik2, iq, Nk1_half, Nk2_half
-     integer :: imin1, imax1, imin2, imax2, iq1, iq2
+     integer :: imin1, imax1, imin2, imax2, iq1, iq2, ik1q, ik2q
 
      real(dp) :: dos_l_max, dos_r_max, time_q, time_ss, time1, time2
      real(dp) :: time_start, time_end
@@ -37,6 +37,7 @@
 
      real(dp) :: k(2)
      real(dp) :: s0(3), s1(3)
+     real(dp) :: K2D_vec_a(2), K2D_vec_b(2)
      real(dp) :: sx_bulk, sy_bulk, sz_bulk
 
      integer , allocatable :: ik12(:,:)
@@ -108,14 +109,35 @@
         sx_r_mpi=0d0; sy_r_mpi=0d0; sz_r_mpi=0d0
      endif
 
+     !> ceiling if K2D_vec are positive, floor if K2D_vec are negative
+     do i  = 1, 2
+         if (K2D_vec1(i)>0) then
+               K2D_vec_a(i)= ceiling(K2D_vec1(i))
+         else
+               K2D_vec_a(i)= floor(K2D_vec1(i))
+         endif
+
+         if (K2D_vec2(i)>0) then
+            K2D_vec_b(i)= ceiling(K2D_vec2(i))
+         else
+            K2D_vec_b(i)= floor(K2D_vec2(i))
+         endif
+      enddo 
+      if (cpuid==0) then
+         write(stdout, '(a)')'WARNING : Your setting of KPLANE_SLAB has been modified because QPI calculation requires the information of the full BZ. '
+         write(stdout, '((a, 2f8.4))')'The first modified vector in QPI: ', K2D_vec_a
+         write(stdout, '((a, 2f8.4))')'The second modified vector in QPI: ', K2D_vec_b
+      endif
+
+
      ikp=0
      do i= 1, nkx
         do j= 1, nky
            ikp=ikp+1
            ik12(1, ikp)= i
            ik12(2, ikp)= j
-           k12(:, ikp)=K2D_start+ (i-1)*K2D_vec1/dble(nkx-1) &
-                      + (j-1)*K2D_vec2/dble(nky-1)
+           k12(:, ikp)=K2D_start+ (i-1)*K2D_vec_a/dble(nkx-1) &
+                      + (j-1)*K2D_vec_b/dble(nky-1)
            k12_shape(:, ikp)= k12(1, ikp)* Ka2+ k12(2, ikp)* Kb2
         enddo
      enddo
@@ -142,8 +164,8 @@
         Nwann= Num_wann/2
         !> spin operator matrix
         !> this part is package dependent. 
-        if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
-           .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
+       !if (index( Package, 'VASP')/=0.or. index( Package, 'Wien2k')/=0 &
+       !   .or. index( Package, 'Abinit')/=0.or. index( Package, 'openmx')/=0) then
            do i=1, Np
               do j=1, Nwann
                  spin_sigma_x(Num_wann*(i-1)+j, Num_wann*(i-1)+Nwann+j)=1.0d0
@@ -154,23 +176,11 @@
                  spin_sigma_z(Num_wann*(i-1)+j+Nwann, Num_wann*(i-1)+j+Nwann)=-1d0
               enddo
            enddo
-        elseif (index( Package, 'QE')/=0.or.index( Package, 'quantumespresso')/=0 &
-             .or.index( Package, 'quantum-espresso')/=0.or.index( Package, 'pwscf')/=0) then
-           do i=1, Np
-              do j=1, Nwann
-                 spin_sigma_x(Num_wann*(i-1)+(2*j-1), Num_wann*(i-1)+2*j)=1.0d0
-                 spin_sigma_x(Num_wann*(i-1)+2*j, Num_wann*(i-1)+(2*j-1))=1.0d0
-                 spin_sigma_y(Num_wann*(i-1)+(2*j-1), Num_wann*(i-1)+2*j)=-zi
-                 spin_sigma_y(Num_wann*(i-1)+2*j, Num_wann*(i-1)+(2*j-1))=zi
-                 spin_sigma_z(Num_wann*(i-1)+(2*j-1), Num_wann*(i-1)+(2*j-1))=1.0d0
-                 spin_sigma_z(Num_wann*(i-1)+2*j, Num_wann*(i-1)+2*j)=-1.0d0
-              enddo
-           enddo
-        else
-           if (cpuid.eq.0) write(stdout, *)'Error: please report your software generating tight binding and wannier90.wout to me'
-           if (cpuid.eq.0) write(stdout, *)'wuquansheng@gmail.com'
-           stop 'Error: please report your software and wannier90.wout to wuquansheng@gmail.com'
-        endif
+       !else
+       !   if (cpuid.eq.0) write(stdout, *)'Error: please report your software generating tight binding and wannier90.wout to me'
+       !   if (cpuid.eq.0) write(stdout, *)'wuquansheng@gmail.com'
+       !   stop 'Error: please report your software and wannier90.wout to wuquansheng@gmail.com'
+       !endif
      endif
 
      omega = E_arc
@@ -423,11 +433,11 @@
         write(arcbulkfile,'(a)')"# y axis is parallel to z x x"
         write(arcbulkfile,'(30a16)')'#kx', 'ky', 'log(dos)'
         do ikp=1, nkx*nky
-           write(arclfile, '(30f16.8)')k12_shape(:, ikp), log(dos_l_mpi(ik12(1, ikp), ik12(2, ikp))) 
+           write(arclfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, log(dos_l_mpi(ik12(1, ikp), ik12(2, ikp))) 
            if (mod(ikp, nky)==0) write(arclfile, *)' '
-           write(arcrfile, '(30f16.8)')k12_shape(:, ikp), log(dos_r_mpi(ik12(1, ikp), ik12(2, ikp))) 
+           write(arcrfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, log(dos_r_mpi(ik12(1, ikp), ik12(2, ikp))) 
            if (mod(ikp, nky)==0) write(arcrfile, *)' '
-           write(arcbulkfile, '(30f16.8)')k12_shape(:, ikp), log(abs(dos_bulk_mpi(ik12(1, ikp), ik12(2, ikp))))
+           write(arcbulkfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, log(abs(dos_bulk_mpi(ik12(1, ikp), ik12(2, ikp))))
            if (mod(ikp, nky)==0) write(arcbulkfile, *)' '
         enddo
         close(arclfile)
@@ -456,14 +466,14 @@
               s0(2)= (sy_l_mpi(ik12(1, ikp), ik12(2, ikp)))/dos_l_mpi(ik12(1, ikp), ik12(2, ikp))
               s0(3)= (sz_l_mpi(ik12(1, ikp), ik12(2, ikp)))/dos_l_mpi(ik12(1, ikp), ik12(2, ikp))
               call rotate(s0, s1)
-              write(spindoslfile, '(30f16.8)')k12_shape(:, ikp), s1
+              write(spindoslfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, s1
            endif
            if (dos_r_only(ik12(1, ikp), ik12(2, ikp))>eps6)then
               s0(1)= (sx_r_mpi(ik12(1, ikp), ik12(2, ikp)))/dos_r_mpi(ik12(1, ikp), ik12(2, ikp))
               s0(2)= (sy_r_mpi(ik12(1, ikp), ik12(2, ikp)))/dos_r_mpi(ik12(1, ikp), ik12(2, ikp))
               s0(3)= (sz_r_mpi(ik12(1, ikp), ik12(2, ikp)))/dos_r_mpi(ik12(1, ikp), ik12(2, ikp))
               call rotate(s0, s1)
-              write(spindosrfile, '(30f16.8)')k12_shape(:, ikp), s1
+              write(spindosrfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, s1
            endif
         enddo
         close(spindoslfile)
@@ -480,37 +490,61 @@
 
      !> calculate QPI (jdos)
      do iq= 1+ cpuid, nkx*nky, num_cpu
-        iq1= ik12(1, iq)- Nk1_half
-        iq2= ik12(2, iq)- Nk2_half
+        !iq1= ik12(1, iq)- Nk1_half
+        !iq2= ik12(2, iq)- Nk2_half
+        iq1 = ik12(1, iq)
+        iq2 = ik12(2, iq)
         if (cpuid==0.and. mod(iq/num_cpu, 100)==0) &
            write(stdout, *) 'JDOS, iq ', iq, 'Nq',nkx*nky, 'time left', &
            (nkx*nky-iq)*(time_end- time_start)/num_cpu, ' s'
         call now(time_start)
-        imin1= max(-Nk1_half-iq1, -Nk1_half)+ Nk1_half+ 1
-        imax1= min(Nk1_half-iq1, Nk1_half)+ Nk1_half+ 1
-        imin2= max(-Nk2_half-iq2, -Nk2_half)+ Nk2_half+ 1
-        imax2= min(Nk2_half-iq2, Nk2_half)+ Nk2_half+ 1
-        do ik2= imin2, imax2
-           do ik1= imin1, imax1
-              jdos_l(iq)= jdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1+iq1, ik2+iq2)
-              jdos_r(iq)= jdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1+iq1, ik2+iq2)
-           enddo !ik1
+        !imin1= max(-Nk1_half-iq1, -Nk1_half)+ Nk1_half+ 1
+        !imax1= min(Nk1_half-iq1, Nk1_half)+ Nk1_half+ 1
+        !imin2= max(-Nk2_half-iq2, -Nk2_half)+ Nk2_half+ 1
+        !imax2= min(Nk2_half-iq2, Nk2_half)+ Nk2_half+ 1
+        !do ik2= imin2, imax2
+        !   do ik1= imin1, imax1
+        !      jdos_l(iq)= jdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1+iq1, ik2+iq2)
+        !      jdos_r(iq)= jdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1+iq1, ik2+iq2)
+        do ik2 = 1, nky
+            do ik1  = 1, nkx
+               ik1q = mod(ik1 + iq1 - 2, nkx-1) + 1
+               ik2q = mod(ik2 + iq2 - 2, nky-1) + 1
+ 
+               jdos_l(iq)= jdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1q, ik2q)
+               jdos_r(iq)= jdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1q, ik2q)
+            
+            enddo !ik1
         enddo !ik2
 
         !> Only works if spin orbital coupling is considered.
         if (SOC>0) then
-           do ik2= imin2, imax2
-              do ik1= imin1, imax1
-                 jsdos_l(iq)= jsdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1+iq1, ik2+iq2) &
-                                         + sx_l_mpi(ik1, ik2)* sx_l_mpi(ik1+iq1, ik2+iq2) &
-                                         + sy_l_mpi(ik1, ik2)* sy_l_mpi(ik1+iq1, ik2+iq2) &
-                                         + sz_l_mpi(ik1, ik2)* sz_l_mpi(ik1+iq1, ik2+iq2)
-                 jsdos_r(iq)= jsdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1+iq1, ik2+iq2) &
-                                         + sx_r_mpi(ik1, ik2)* sx_r_mpi(ik1+iq1, ik2+iq2) &
-                                         + sy_r_mpi(ik1, ik2)* sy_r_mpi(ik1+iq1, ik2+iq2) &
-                                         + sz_r_mpi(ik1, ik2)* sz_r_mpi(ik1+iq1, ik2+iq2)
-              enddo !ik1
-           enddo !ik2
+         !   do ik2= imin2, imax2
+         !      do ik1= imin1, imax1
+         !         jsdos_l(iq)= jsdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1+iq1, ik2+iq2) &
+         !                                 + sx_l_mpi(ik1, ik2)* sx_l_mpi(ik1+iq1, ik2+iq2) &
+         !                                 + sy_l_mpi(ik1, ik2)* sy_l_mpi(ik1+iq1, ik2+iq2) &
+         !                                 + sz_l_mpi(ik1, ik2)* sz_l_mpi(ik1+iq1, ik2+iq2)
+         !         jsdos_r(iq)= jsdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1+iq1, ik2+iq2) &
+         !                                 + sx_r_mpi(ik1, ik2)* sx_r_mpi(ik1+iq1, ik2+iq2) &
+         !                                 + sy_r_mpi(ik1, ik2)* sy_r_mpi(ik1+iq1, ik2+iq2) &
+         !                                 + sz_r_mpi(ik1, ik2)* sz_r_mpi(ik1+iq1, ik2+iq2)
+            do ik2 = 1, nky
+               do ik1 = 1, nkx
+                  ik1q = mod(ik1 + iq1 - 2, Nk1-1) + 1
+                  ik2q = mod(ik2 + iq2 - 2, Nk2-1) + 1
+                  
+                  jsdos_l(iq)= jsdos_l(iq)+ dos_l_only(ik1, ik2)* dos_l_only(ik1q, ik2q) &
+                                          + sx_l_mpi(ik1, ik2)* sx_l_mpi(ik1q, ik2q) &
+                                          + sy_l_mpi(ik1, ik2)* sy_l_mpi(ik1q, ik2q) &
+                                          + sz_l_mpi(ik1, ik2)* sz_l_mpi(ik1q, ik2q)
+                  jsdos_r(iq)= jsdos_r(iq)+ dos_r_only(ik1, ik2)* dos_r_only(ik1q, ik2q) &
+                                          + sx_r_mpi(ik1, ik2)* sx_r_mpi(ik1q, ik2q) &
+                                          + sy_r_mpi(ik1, ik2)* sy_r_mpi(ik1q, ik2q) &
+                                          + sz_r_mpi(ik1, ik2)* sz_r_mpi(ik1q, ik2q)
+
+               enddo !ik1
+            enddo !ik2
         endif
         call now(time_end)
      enddo !iq
@@ -555,7 +589,7 @@
         write(arcljfile,'(a)')"# y axis is parallel to z x x"
         write(arcljfile,'(30a16)')'#kx', 'ky', 'log(dos)'
         do ikp=1, nkx*nky
-           write(arcljfile, '(30f16.8)')k12_shape(:, ikp),  log(abs(jdos_l_mpi(ikp)))
+           write(arcljfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic,  log(abs(jdos_l_mpi(ikp)))
            if (mod(ikp, nky)==0) write(arcljfile, *)' '
         enddo
         close(arcljfile)
@@ -568,7 +602,7 @@
         write(arcrjfile,'(a)')"# y axis is parallel to z x x"
         write(arcrjfile,'(30a16)')'#kx', 'ky', 'log(dos)'
         do ikp=1, nkx*nky
-           write(arcrjfile, '(30f16.8)')k12_shape(:, ikp),  log(abs(jdos_r_mpi(ikp)))
+           write(arcrjfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic,  log(abs(jdos_r_mpi(ikp)))
            if (mod(ikp, nky)==0) write(arcrjfile, *)' '
         enddo
         close(arcrjfile)
@@ -583,7 +617,7 @@
         write(arcljsfile,'(a)')"# y axis is parallel to z x x"
         write(arcljsfile,'(30a16)')'#kx', 'ky', 'log(dos)'
         do ikp=1, nkx*nky
-           write(arcljsfile, '(30f16.8)')k12_shape(:, ikp), log(abs(jsdos_l_mpi(ikp)))
+           write(arcljsfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, log(abs(jsdos_l_mpi(ikp)))
            if (mod(ikp, nky)==0) write(arcljsfile, *)' '
         enddo
         close(arcljsfile)
@@ -596,7 +630,7 @@
         write(arcrjsfile,'(a)')"# y axis is parallel to z x x"
         write(arcrjsfile,'(30a16)')'#kx', 'ky', 'log(dos)'
         do ikp=1, nkx*nky
-           write(arcrjsfile, '(30f16.8)')k12_shape(:, ikp), log(abs(jsdos_r_mpi(ikp)))
+           write(arcrjsfile, '(30f16.8)')k12_shape(:, ikp)*Angstrom2atomic, log(abs(jsdos_r_mpi(ikp)))
            if (mod(ikp, nky)==0) write(arcrjsfile, *)' '
         enddo
         close(arcrjsfile)
@@ -630,8 +664,8 @@
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
         write(outfileindex, '(a)')'unset cbtics'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.jsdat_l' u 1:2:(exp($3)) w pm3d"
         close(outfileindex)
@@ -665,8 +699,8 @@
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
         write(outfileindex, '(a)')'unset cbtics'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.jsdat_r' u 1:2:(exp($3)) w pm3d"
         close(outfileindex)
@@ -702,8 +736,8 @@
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
         write(outfileindex, '(a)')'unset cbtics'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.jdat_l' u 1:2:(exp($3)) w pm3d"
         close(outfileindex)
@@ -737,8 +771,8 @@
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
         write(outfileindex, '(a)')'unset cbtics'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.jdat_r' u 1:2:(exp($3)) w pm3d"
         close(outfileindex)
@@ -771,8 +805,8 @@
         write(outfileindex, '(a)')'set ylabel "K_2 (1/{\305})"'
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.dat_l' u 1:2:3 w pm3d"
 
@@ -806,8 +840,8 @@
         write(outfileindex, '(a)')'set ylabel "K_2 (1/{\305})"'
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.dat_r' u 1:2:3 w pm3d"
 
@@ -841,8 +875,8 @@
         write(outfileindex, '(a)')'set ylabel "K_2 (1/{\305})"'
         write(outfileindex, '(a)')'set ylabel offset 1, 0'
         write(outfileindex, '(a)')'set colorbox'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape, ':', k1max_shape, ']'
-        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape, ':', k2max_shape, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set xrange [', k1min_shape*Angstrom2atomic, ':', k1max_shape*Angstrom2atomic, ']'
+        write(outfileindex, '(a, f8.5, a, f8.5, a)')'set yrange [', k2min_shape*Angstrom2atomic, ':', k2max_shape*Angstrom2atomic, ']'
         write(outfileindex, '(a)')'set pm3d interpolate 2,2'
         write(outfileindex, '(2a)')"splot 'arc.dat_bulk' u 1:2:3 w pm3d"
         close(outfileindex)
@@ -872,10 +906,10 @@
         write(outfileindex, '(a)')"set size ratio -1"
         write(outfileindex, '(a)')"set view map"
         write(outfileindex, '(a)')"unset colorbox"
-        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set xrange [", minval(k12_shape(1, :)), ":", &
-           maxval(k12_shape(1, :)), "]"
-        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set yrange [", minval(k12_shape(2, :)), ":", &
-           maxval(k12_shape(2, :)), "]"
+        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set xrange [", minval(k12_shape(1, :))*Angstrom2atomic, ":", &
+           maxval(k12_shape(1, :))*Angstrom2atomic, "]"
+        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set yrange [", minval(k12_shape(2, :))*Angstrom2atomic, ":", &
+           maxval(k12_shape(2, :))*Angstrom2atomic, "]"
         write(outfileindex, '(a)')"set pm3d interpolate 2,2"
         write(outfileindex, '(a)')"set label 1 'Spin texture' at graph 0.25, 1.10 front"
         write(outfileindex, '(a)')"splot 'arc.dat_r' u 1:2:3 w pm3d, \ "
@@ -907,10 +941,10 @@
         write(outfileindex, '(a)')"set size ratio -1"
         write(outfileindex, '(a)')"set view map"
         write(outfileindex, '(a)')"unset colorbox"
-        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set xrange [", minval(k12_shape(1, :)), ":", &
-           maxval(k12_shape(1, :)), "]"
-        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set yrange [", minval(k12_shape(2, :)), ":", &
-           maxval(k12_shape(2, :)), "]"
+        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set xrange [", minval(k12_shape(1, :))*Angstrom2atomic, ":", &
+           maxval(k12_shape(1, :))*Angstrom2atomic, "]"
+        write(outfileindex, '(a, f10.5, a, f10.5, a)')"set yrange [", minval(k12_shape(2, :))*Angstrom2atomic, ":", &
+           maxval(k12_shape(2, :))*Angstrom2atomic, "]"
         write(outfileindex, '(a)')"set pm3d interpolate 2,2"
         write(outfileindex, '(a)')"set label 1 'Spin texture' at graph 0.25, 1.10 front"
         write(outfileindex, '(a)')"splot 'arc.dat_l' u 1:2:3 w pm3d, \ "

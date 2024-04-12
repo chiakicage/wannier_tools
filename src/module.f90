@@ -360,13 +360,15 @@
      !> define the file index to void the same index in different subroutines
      integer, public, save :: outfileindex= 11932
 
-     character(80) :: Hrfile
-     character(80) :: Particle
-     character(80) :: Package
-     character(80) :: KPorTB
-     real(dp) :: vef
-     logical :: Is_Sparse_Hr, Is_Sparse, Use_ELPA, Is_Hrfile
-     namelist / TB_FILE / Hrfile, Particle, Package, KPorTB, Is_Hrfile, Is_Sparse, Is_Sparse_Hr, Use_ELPA,vef
+     character(80) :: Hrfile             ! filename
+     character(80) :: Overlapfile        ! overlap matrix between basis only when Orthogonal_Basis=F
+     character(80) :: Particle           ! phonon, electron
+     character(80) :: Package            ! VASP, QE
+     character(80) :: KPorTB             ! KP or TB
+     logical       :: Orthogonal_Basis   ! True or False for Orthogonal basis or non-orthogonal basis
+     logical :: Is_Sparse_Hr, Is_Sparse, Is_Hrfile
+     namelist / TB_FILE / Hrfile, Particle, Package, KPorTB, Is_Hrfile, &
+        Is_Sparse, Is_Sparse_Hr, Orthogonal_Basis, Overlapfile
 
      !> control parameters
      logical :: BulkBand_calc    ! Flag for bulk energy band calculation
@@ -424,7 +426,7 @@
      logical :: Symmetry_Import_calc  ! Flag for Boltzmann tranport under magnetic field using symmetry
      logical :: Boltz_evolve_k  ! Flag for Boltzmann tranport under magnetic field
      logical :: Boltz_k_calc  ! Flag for Boltzmann tranport under magnetic field
-     logical :: AHC_calc  ! Flag for anomalous Hall effect
+     logical :: AHC_calc  ! Flag for Boltzmann tranport under magnetic field
      logical :: SHC_calc  ! Flag for spin Hall effect calculation
      logical :: LandauLevel_k_calc  ! Flag for landau level calculation along k direction with fixed B
      logical :: LandauLevel_kplane_calc  ! Flag for landau level calculation along in a kplane in the magnetic BZ
@@ -438,12 +440,14 @@
      logical :: LanczosSeqDOS_calc  ! DOS
      logical :: Translate_to_WS_calc  ! whether translate the k points into the Wigner-Seitz cell
      logical :: FermiLevel_calc  ! calculate Fermi level for a given temperature Beta=1/T
+     logical :: ANE_calc ! calculate  anomalous nernst coefficient
      
      logical :: LanczosBand_calc=.false.
      logical :: LanczosDos_calc= .false.
      logical :: landau_chern_calc = .false.
      logical :: export_newhr = .false.
      logical :: export_maghr =.false.
+     logical :: valley_projection_calc ! for valley projection, only for sparse hamiltonina, you need to provide the valley operator 
      
      logical :: w3d_nested_calc = .false.
      
@@ -471,13 +475,14 @@
                           FindNodes_calc, TBtoKP_calc, LOTO_correction, &
                           BulkBand_plane_calc, Hof_Butt_calc, Symmetry_Import_calc, &
                           Boltz_Berry_correction, &
-                          Boltz_k_calc, Boltz_evolve_k, Boltz_OHE_calc, AHC_Calc, SHC_Calc, &
+                          Boltz_k_calc, Boltz_evolve_k, Boltz_OHE_calc, AHC_Calc, SHC_calc, &
                           LandauLevel_k_calc, OrbitalTexture_calc, OrbitalTexture_3D_calc, &
                           LandauLevel_wavefunction_calc, Fit_kp_calc, DMFT_MAG_calc, &
                           LanczosSeqDOS_calc, Translate_to_WS_calc, LandauLevel_k_dos_calc, &
                           LandauLevel_B_dos_calc,LanczosBand_calc,LanczosDos_calc, &
                           LandauLevel_B_calc, LandauLevel_kplane_calc,landau_chern_calc, &
-                          FermiLevel_calc , export_newhr,export_maghr,w3d_nested_calc
+                          FermiLevel_calc,ANE_calc, export_newhr,export_maghr,w3d_nested_calc, &
+                          valley_projection_calc
 
      integer :: Nslab  ! Number of slabs for 2d Slab system
      integer :: Nslab1 ! Number of slabs for 1D wire system
@@ -497,6 +502,7 @@
      integer :: Num_wann  ! Number of Wannier functions
 
      integer :: Nrpts ! Number of R points
+     integer :: Nrpts_valley ! Number of R points
 
    
      integer :: Nk   ! number of k points for different use
@@ -519,6 +525,8 @@
     
      real(Dp) :: eta     ! used to calculate dos epsilon+i eta
      real(Dp) :: Eta_Arc ! used to calculate dos epsilon+i eta
+     
+     real(Dp) :: EF_broadening ! used to define the energy range around fermi energy in calculating sigma_OHE
 
    
      integer :: OmegaNum   ! The number of energy slices between OmegaMin and OmegaMax
@@ -553,6 +561,7 @@
      integer :: Nslice_BTau_Max
 
      real(dp) :: time_total_debug
+     real(dp) :: symprec= 1E-4
 
      !> cut of radial for summation over R vectors
      real(dp) :: Rcut
@@ -577,11 +586,11 @@
      real(dp) :: shift_to_topsurface_cart(3)
 
      !> namelist parameters
-     namelist /PARAMETERS/ Eta_Arc, OmegaNum, OmegaNum_unfold, OmegaMin, OmegaMax, &
+     namelist /PARAMETERS/ Eta_Arc,EF_broadening, OmegaNum, OmegaNum_unfold, OmegaMin, OmegaMax, &
         E_arc, Nk1, Nk2, Nk3, NP, Gap_threshold, Tmin, Tmax, NumT, &
         NBTau, BTauNum, BTauMax, Rcut, Magp, Magq, Magp_min, Magp_max, Nslice_BTau_Max, &
         wcc_neighbour_tol, wcc_calc_tol, Beta,NumLCZVecs, &
-        Relaxation_Time_Tau, &
+        Relaxation_Time_Tau,  symprec, &
         NumRandomConfs, NumSelectedEigenVals, projection_weight_mode, topsurface_atom_index
     
      real(Dp) :: E_fermi  ! Fermi energy, search E-fermi in OUTCAR for VASP, set to zero for Wien2k
@@ -607,6 +616,7 @@
      !> Electric field along the stacking direction of a 2D system in eV/Angstrom
      real(dp) :: Electric_field_in_eVpA
      real(dp) :: Symmetrical_Electric_field_in_eVpA
+     integer :: center_atom_for_electric_field(2)  ! At this atom, the electric potential is zero
      logical :: Inner_symmetrical_Electric_Field
 
      !> a parameter to control the Vacumm thickness for the slab system 
@@ -620,7 +630,7 @@
         Add_Zeeman_Field, Effective_gfactor, Zeeman_energy_in_eV, &
         Electric_field_in_eVpA, Symmetrical_Electric_field_in_eVpA, &
         Inner_symmetrical_Electric_Field, ijmax, &
-        Vacuum_thickness_in_Angstrom
+        Vacuum_thickness_in_Angstrom, center_atom_for_electric_field
 
      real(dp),parameter :: alpha= 1.20736d0*1D-6  !> e/2/h*a*a   a=1d-10m, h is the planck constant then the flux equals alpha*B*s
 
@@ -637,7 +647,8 @@
      real(dp),parameter :: epsilon0= 8.85418781762E-12    ! dielectric constant in SI unit
      real(dp),parameter :: Magneticfluxdensity_atomic=  2.35051756758*1E5    ! magnetic field strength in SI unit
 
-     real(dp),parameter ::  Pi= 3.14159265358979d0  ! circumference ratio pi  
+     real(dp),parameter :: Pi= 3.14159265358979d0  ! circumference ratio pi  
+     real(dp),parameter :: twopi=2d0*Pi    ! two times of Pi
      real(dp),parameter :: half= 0.5d0  ! 1/2
      real(dp),parameter :: zero= 0.0d0  ! 0
      real(dp),parameter :: one = 1.0d0  ! 1
@@ -648,6 +659,7 @@
      real(dp),parameter :: eps9= 1e-9   ! 0.000000001
      real(dp),parameter :: eps12= 1e-12   ! 0.000000000001
      complex(dp),parameter :: zzero= (0.0d0, 0d0)  ! 0
+     complex(dp),parameter :: One_complex= (1.0d0, 0d0)  ! 0
 
      real(Dp),parameter :: Ka(2)=(/1.0d0,0.0d0/)  
      real(Dp),parameter :: Kb(2)=(/0.0d0,1.0d0/)
@@ -730,6 +742,10 @@
 
      !> Usually, Fold_cell is smaller than Origin_cell. 
      type(cell_type) :: Folded_cell
+
+     !> a global shift between the origin cell to Folded_cell
+     !>  pos_cart_sc= Origin_cell%Atom_position_cart(:, ia)+shift_pos_cart
+     real(dp) :: global_shift_SC_to_PC_cart(3)
 
      !> magnetic super cell after adding magnetic field, the size of it is Nslab.
      type(cell_type) :: Magnetic_cell
@@ -844,16 +860,26 @@
      real(dp) :: K3D_vec3_cube(3) ! the 3rd k vector for the k cube
 
      integer, allocatable     :: irvec(:,:)   ! R coordinates in fractional units
+     integer, allocatable     :: irvec_valley(:,:)   ! R coordinates in fractional units
      real(dp), allocatable    :: crvec(:,:)   ! R coordinates in Cartesian coordinates in units of Angstrom
      complex(dp), allocatable :: HmnR(:,:,:)   ! Hamiltonian m,n are band indexes
+     complex(dp), allocatable :: valley_operator_R(:,:,:)   ! Hamiltonian m,n are band indexes
      
      
      !sparse HmnR arraies
-     integer,allocatable :: hicoo(:),hjcoo(:),hirv(:)
+     integer,allocatable :: hicoo(:), hjcoo(:), hirv(:, :)
      complex(dp),allocatable :: hacoo(:)
 
+     !> overlap matrix in sparse format
+     integer,allocatable :: sicoo(:), sjcoo(:), sirv(:, :)
+     complex(dp),allocatable :: sacoo(:)
+
+     !> valley operator 
+     integer,allocatable :: valley_operator_icoo(:), valley_operator_jcoo(:), valley_operator_irv(:)
+     complex(dp),allocatable :: valley_operator_acoo(:)
+
      !> sparse hr length
-     integer :: splen, splen_input
+     integer :: splen, splen_input, splen_valley_input, splen_overlap_input
      
      
      integer, allocatable     :: ndegen(:)  ! degree of degeneracy of R point
@@ -894,6 +920,11 @@
      complex(dp), allocatable :: mirror_z(:, :)
      complex(dp), allocatable :: C2yT(:, :)
      complex(dp), allocatable :: glide(:, :)
+
+     !> a sparse format to store C3z operator, test only for pz orbital or s orbital
+     complex(dp), allocatable :: C3z_acoo(:)
+     integer, allocatable :: C3z_icoo(:)
+     integer, allocatable :: C3z_jcoo(:)
      
      !> symmetry operator apply on coordinate system
      real(dp), allocatable :: inv_op(:, :)
@@ -901,6 +932,7 @@
      real(dp), allocatable :: mirror_x_op(:, :)
      real(dp), allocatable :: mirror_y_op(:, :)
      real(dp), allocatable :: glide_y_op(:, :)
+     character(10) :: point_group_operator_name(48)
 
      !> weyl point information from the input.dat
      integer :: Num_Weyls
@@ -1026,6 +1058,10 @@
      real(dp), allocatable :: tau_cart(:,:)
      real(dp), allocatable :: tau_direct(:,:)
      real(dp), allocatable :: spatial_inversion(:)
+
+     !> build a map between atoms under the symmetry operation
+     !> dimension number_group_operators, Num_atoms
+     integer, allocatable :: imap_sym(:, :)
 
 
  end module para

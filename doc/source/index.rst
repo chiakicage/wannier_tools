@@ -8,14 +8,20 @@ WannierTools
 
 **WannierTools: an open-source software package for novel topological materials**
 
-Source on Github : https://github.com/quanshengwu/wannier_tools
+Source on Github : https://github.com/quanshengwu/wannier_tools.
 
-Aiming to investigate topoligical properties of 
+You can find more useful information on website https://www.wanniertools.org.
+
+Aiming to investigate topological properties, electronic structures and transport properties of 
 
 * Electron systems (Tested)
 
 * Phonon systems (Testing)
 
+Join the QQ group to get supports: **709225749**
+
+**Outline**
+^^^^^^^^^^^^^^^^^
 
 .. toctree::
    :maxdepth: 2
@@ -24,9 +30,10 @@ Aiming to investigate topoligical properties of
    changes
    preliminaries
    tutorials
+   citations
 
-**Citation**
-^^^^^^^^^^^^
+**Citations**
+^^^^^^^^^^^^^^^^^
 
 Please cite this paper when using WannierTools for your researchs::
 
@@ -66,9 +73,13 @@ WannierTools 2.x have been written by :
 
 Contributors to the code include:
 
-* Changming Yue (IOP, Beijing, China): symmetrization
-* Yifei Guan (EPFL, Switzerland): Landau level
-* Yi Liu (BNU, Beijing, China): Runge-Kutta integration
+* Changming Yue (IOP CAS, Beijing, China): Tight binding symmetrization, phononTB
+* Yifei Guan (EPFL, Switzerland): Landau level (2018)
+* Tiantian Zhang (IOP, CAS, Beijing, China) : phonon LO-TO
+* Yi Liu (BNU, Beijing, China): Runge-Kutta integration (2018)
+* Hanqi Pi (IOP CAS, Beijing, China): Anomalous Nerest Effect (2022)
+* Xiangyu Zhou (IOP CAS, Beijing, China) : Documenetation updated to version 2.6.2 (2022)
+
 
 .. image:: wannier_tools-logo-crop.png
    :scale: 20 %
@@ -79,6 +90,6 @@ Contributors to the code include:
 This work was sponsored by the following institutes: 
 
 .. image:: ./images/wanniertools-sponsors.jpg
-   :scale: 80 %
+   :scale: 42 %
 
 

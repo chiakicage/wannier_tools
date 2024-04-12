@@ -116,6 +116,7 @@ subroutine dos_sparse
       eigval(:)= W(1:neval)
 
       !> get density of state
+      !> dos(e)= \sum_nk \delta(e-e_nk)
       do ie= 1, NE
          do ib= 1, neval
             x= omega(ie)- eigval(ib)
@@ -154,8 +155,8 @@ subroutine dos_sparse
    if (cpuid==0) then
       open(unit=outfileindex, file='dos.gnu')
       write(outfileindex, '(a)')"set encoding iso_8859_1"
-      write(outfileindex, '(a)')'set terminal  postscript enhanced color font ",24" '
-      write(outfileindex, '(a)')"set output 'dos.eps'"
+      write(outfileindex, '(a)')'set terminal  pdf enhanced color font ",14" '
+      write(outfileindex, '(a)')"set output 'dos.pdf'"
       write(outfileindex, '(a)')'set border lw 2'
       write(outfileindex, '(a)')'set autoscale fix'
       write(outfileindex, '(a, f16.6,a)')'set yrange [0:', maxval(dos)*eV2Hartree+0.5, '1]'
@@ -508,6 +509,7 @@ subroutine dos_sub
       write(outfileindex, '(a, f16.6,a)')'set yrange [0:', maxval(dos)*eV2Hartree+0.5, '1]'
       write(outfileindex, '(a)')'set key samplen 0.8 spacing 1 font ",12"'
       write(outfileindex, '(a)')'set xlabel "Energy (eV)"'
+      write(outfileindex, '(a)')'set key title  "Broadening"'
       write(outfileindex, '(a)')'set title "DOS with different broadenings"'
       write(outfileindex, '(a)')'set ylabel "DOS (states/eV/unit cell)"'
       write(outfileindex, '(a, f6.1, a)')"plot 'dos.dat' u 1:2 w l lw 2 title '",&
